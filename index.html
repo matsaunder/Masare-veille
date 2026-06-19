@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pipeline MASARE — Veille Distressed</title>
+  <style>
+    :root {
+      --bg: #f4f3f0;
+      --surface: #ffffff;
+      --border: #e2dfd9;
+      --text: #1a1a1a;
+      --muted: #6b6b6b;
+      --accent: #1b3558;
+      --accent-dim: #e7edf5;
+      --red: #b92b2b;
+      --red-bg: #fdf1f1;
+      --orange: #c07000;
+      --orange-bg: #fdf6ec;
+      --green: #1a7a3c;
+      --green-bg: #eef8f2;
+      --tag: #eeede9;
+      --r: 8px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13.5px;
+      line-height: 1.55;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--accent);
+      color: #fff;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,.25);
+    }
+
+    .header-left { display: flex; align-items: center; gap: 12px; }
+
+    .logo {
+      width: 34px;
+      height: 34px;
+      background: rgba(255,255,255,.15);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 15px;
+      letter-spacing: -0.5px;
+      flex-shrink: 0;
+    }
+
+    header h1 {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: .3px;
+    }
+
+    #rapport-date {
+      font-size: 11.5px;
+      background: rgba(255,255,255,.12);
+      padding: 3px 10px;
+      border-radius: 20px;
+      white-space: nowrap;
+    }
+
+    /* ── Toolbar ── */
+    #toolbar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 24px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .filter-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .filter-group label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      white-space: nowrap;
+    }
+
+    select {
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 5px 28px 5px 10px;
+      font-size: 12.5px;
+      background: white url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b6b6b'/%3E%3C/svg%3E") no-repeat calc(100% - 9px) center;
+      -webkit-appearance: none;
+      appearance: none;
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    select:focus { outline: none; border-color: var(--accent); }
+
+    #sort-score {
+      margin-left: 4px;
+      padding: 5px 12px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      font-size: 12px;
+      background: white;
+      cursor: pointer;
+      color: var(--muted);
+      transition: all .15s;
+    }
+
+    #sort-score.active {
+      background: var(--accent-dim);
+      border-color: var(--accent);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    #toolbar-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    #count {
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    /* ── Grid ── */
+    main {
+      padding: 20px 24px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+      gap: 14px;
+      align-items: start;
+    }
+
+    /* ── Card ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: box-shadow .15s;
+    }
+
+    .card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.09); }
+
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .card-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.3;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 20px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+    }
+
+    .u-haute { background: var(--red-bg); color: var(--red); }
+    .u-moyenne { background: var(--orange-bg); color: var(--orange); }
+    .u-basse { background: var(--green-bg); color: var(--green); }
+
+    /* Tags row */
+    .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .tag {
+      background: var(--tag);
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 11.5px;
+      color: var(--muted);
+    }
+
+    /* Key fields grid */
+    .fields {
+      display: grid;
+      grid-template-columns: max-content 1fr;
+      gap: 3px 14px;
+      font-size: 12.5px;
+    }
+
+    .fl { color: var(--muted); }
+    .fv { font-weight: 500; }
+
+    .score-num {
+      font-weight: 800;
+      font-size: 14px;
+      color: var(--accent);
+    }
+
+    /* Synthèse */
+    .synthese {
+      font-size: 12.5px;
+      color: #444;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+      line-height: 1.6;
+    }
+
+    /* Flags */
+    .flags {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
+
+    .flag {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      letter-spacing: .3px;
+    }
+
+    .flag-on { background: #dff0e3; color: #176135; }
+    .flag-off { background: var(--tag); color: #aaa; text-decoration: line-through; }
+
+    /* Contacts */
+    .contacts {
+      font-size: 12px;
+      color: var(--muted);
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 6px;
+      align-items: flex-start;
+    }
+
+    .contacts-icon { flex-shrink: 0; margin-top: 1px; }
+
+    /* Score bar */
+    .score-bar-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .score-bar {
+      flex: 1;
+      height: 5px;
+      background: var(--tag);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .score-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 3px;
+      transition: width .4s;
+    }
+
+    /* ── State screens ── */
+    .state-screen {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 80px 24px;
+      color: var(--muted);
+    }
+
+    .state-screen .icon {
+      font-size: 40px;
+      margin-bottom: 14px;
+      opacity: .5;
+    }
+
+    .state-screen p { font-size: 14px; margin-top: 6px; }
+    .state-screen small { font-size: 12px; opacity: .75; }
+
+    .spinner {
+      display: inline-block;
+      width: 28px;
+      height: 28px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .75s linear infinite;
+      margin-bottom: 14px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Responsive ── */
+    @media (max-width: 600px) {
+      header { padding: 12px 16px; }
+      header h1 { font-size: 14px; }
+      #toolbar { padding: 8px 16px; gap: 8px; }
+      main { padding: 12px 16px; grid-template-columns: 1fr; }
+      #sort-score { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="logo">M</div>
+    <h1>Pipeline MASARE — Veille Distressed</h1>
+  </div>
+  <div id="rapport-date">Chargement…</div>
+</header>
+
+<div id="toolbar">
+  <div class="filter-group">
+    <label>Secteur</label>
+    <select id="f-secteur"><option value="">Tous</option></select>
+  </div>
+  <div class="filter-group">
+    <label>Urgence</label>
+    <select id="f-urgence">
+      <option value="">Toutes</option>
+      <option value="haute">Haute</option>
+      <option value="moyenne">Moyenne</option>
+      <option value="basse">Basse</option>
+    </select>
+  </div>
+  <div class="filter-group">
+    <label>Procédure</label>
+    <select id="f-procedure"><option value="">Toutes</option></select>
+  </div>
+  <button id="sort-score">Score ↓</button>
+  <div id="toolbar-right">
+    <span id="count"></span>
+  </div>
+</div>
+
+<main id="grid">
+  <div class="state-screen">
+    <div class="spinner"></div>
+    <p>Récupération du dernier rapport…</p>
+  </div>
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  const REPO = 'matsaunder/Masare-veille';
+  const RAW_BASE = `https://raw.githubusercontent.com/${REPO}/main/`;
+  const API_CONTENTS = `https://api.github.com/repos/${REPO}/contents/`;
+
+  let allDossiers = [];
+  let sortByScore = false;
+
+  /* ── Fetch ── */
+
+  async function findLatestRapport() {
+    const r = await fetch(API_CONTENTS, { headers: { Accept: 'application/vnd.github+json' } });
+    if (!r.ok) throw new Error(`GitHub API ${r.status} — vérifiez que le dépôt est public.`);
+    const files = await r.json();
+    const rapports = files
+      .filter(f => /^rapport_\d{8}\.md$/.test(f.name))
+      .sort((a, b) => b.name.localeCompare(a.name));
+    if (!rapports.length) throw new Error('Aucun fichier rapport_YYYYMMDD.md trouvé à la racine du dépôt.');
+    return rapports[0].name;
+  }
+
+  async function fetchRaw(filename) {
+    const r = await fetch(RAW_BASE + filename);
+    if (!r.ok) throw new Error(`Impossible de lire ${filename} (${r.status})`);
+    return r.text();
+  }
+
+  /* ── Parser ── */
+
+  function parseRapport(md) {
+    const dossiers = [];
+    // Split on horizontal rules (--- or ***)
+    const blocks = md.split(/\n[ \t]*[-*]{3,}[ \t]*\n/);
+
+    for (const block of blocks) {
+      const nameMatch = block.match(/^###\s+(.+)/m);
+      if (!nameMatch) continue;
+
+      const d = { name: nameMatch[1].trim() };
+
+      // Bullet fields: - **Label** : Value
+      const bulletRe = /^[-*]\s+\*\*([^*]+)\*\*\s*:?\s*(.+)/gm;
+      let m;
+      while ((m = bulletRe.exec(block)) !== null) {
+        const key = m[1].trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        const val = m[2].trim();
+        if (key === 'siren') d.siren = val;
+        else if (key === 'score') d.score = val;
+        else if (key === 'secteur') d.secteur = val;
+        else if (/^proc/.test(key)) d.procedure = val;
+        else if (key === 'urgence') d.urgence = val;
+        else if (key === 'ville') d.ville = val;
+        else if (key === 'bitd') d.bitd = /oui|✓|yes|true|1/i.test(val);
+        else if (key === 'marque') d.marque = /oui|✓|yes|true|1/i.test(val);
+        else if (key === 'ebitda') d.ebitda = val;
+      }
+
+      // Multi-line sections: **Label** :\ntext
+      d.synthese = extractSection(block, 'Synth[eè]se');
+      d.contacts = extractSection(block, 'Contacts?');
+
+      // Numeric score for sorting
+      const sm = (d.score || '').match(/(\d+(?:[.,]\d+)?)/);
+      d.scoreNum = sm ? parseFloat(sm[1].replace(',', '.')) : 0;
+
+      dossiers.push(d);
+    }
+
+    return dossiers;
+  }
+
+  function extractSection(block, labelRe) {
+    const re = new RegExp(`\\*\\*${labelRe}\\*\\*\\s*:?\\s*\\n([\\s\\S]*?)(?=\\n\\*\\*|\\n[-*]\\s\\*\\*|$)`, 'i');
+    const m = block.match(re);
+    return m ? m[1].trim() : null;
+  }
+
+  /* ── Filters & sort ── */
+
+  function applyFilters() {
+    const secteur = document.getElementById('f-secteur').value;
+    const urgence = document.getElementById('f-urgence').value;
+    const proc = document.getElementById('f-procedure').value;
+
+    let list = allDossiers.filter(d => {
+      if (secteur && d.secteur !== secteur) return false;
+      if (urgence && (d.urgence || '').toLowerCase() !== urgence) return false;
+      if (proc && d.procedure !== proc) return false;
+      return true;
+    });
+
+    if (sortByScore) list = list.slice().sort((a, b) => b.scoreNum - a.scoreNum);
+
+    return list;
+  }
+
+  /* ── Render ── */
+
+  function render() {
+    const list = applyFilters();
+    const grid = document.getElementById('grid');
+    document.getElementById('count').textContent =
+      `${list.length} dossier${list.length !== 1 ? 's' : ''}`;
+
+    if (!list.length) {
+      grid.innerHTML = `<div class="state-screen">
+        <div class="icon">🔍</div>
+        <p>Aucun dossier ne correspond aux filtres sélectionnés.</p>
+      </div>`;
+      return;
+    }
+
+    grid.innerHTML = list.map(cardHTML).join('');
+  }
+
+  function urgClass(u) {
+    const l = (u || '').toLowerCase();
+    if (l === 'haute') return 'u-haute';
+    if (l === 'moyenne') return 'u-moyenne';
+    return 'u-basse';
+  }
+
+  function scoreWidth(n) {
+    const d = n || 0;
+    return Math.min(100, (d / 10) * 100) + '%';
+  }
+
+  function flag(label, on) {
+    return `<span class="flag ${on ? 'flag-on' : 'flag-off'}">${e(label)}</span>`;
+  }
+
+  function cardHTML(d) {
+    const hasFlags = d.bitd !== undefined || d.marque !== undefined || d.ebitda;
+    return `<article class="card">
+      <div class="card-top">
+        <div class="card-name">${e(d.name)}</div>
+        ${d.urgence ? `<span class="badge ${urgClass(d.urgence)}">${e(d.urgence)}</span>` : ''}
+      </div>
+
+      ${(d.ville || d.secteur || d.procedure) ? `<div class="tags">
+        ${d.ville ? `<span class="tag">📍 ${e(d.ville)}</span>` : ''}
+        ${d.secteur ? `<span class="tag">${e(d.secteur)}</span>` : ''}
+        ${d.procedure ? `<span class="tag">${e(d.procedure)}</span>` : ''}
+      </div>` : ''}
+
+      <div class="fields">
+        ${d.siren ? `<span class="fl">SIREN</span><span class="fv">${e(d.siren)}</span>` : ''}
+        ${d.score !== undefined ? `<span class="fl">Score</span>
+        <span class="fv">
+          <div class="score-bar-wrap">
+            <span class="score-num">${e(d.score)}</span>
+            <div class="score-bar"><div class="score-fill" style="width:${scoreWidth(d.scoreNum)}"></div></div>
+          </div>
+        </span>` : ''}
+      </div>
+
+      ${d.synthese ? `<div class="synthese">${e(d.synthese)}</div>` : ''}
+
+      ${hasFlags ? `<div class="flags">
+        ${d.bitd !== undefined ? flag('BITD', d.bitd) : ''}
+        ${d.marque !== undefined ? flag('Marque', d.marque) : ''}
+        ${d.ebitda ? `<span class="flag flag-on">EBITDA ${e(d.ebitda)}</span>` : ''}
+      </div>` : ''}
+
+      ${d.contacts ? `<div class="contacts">
+        <span class="contacts-icon">📞</span>
+        <span>${e(d.contacts)}</span>
+      </div>` : ''}
+    </article>`;
+  }
+
+  function e(s) {
+    return String(s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /* ── Populate filter dropdowns ── */
+
+  function populateFilters(dossiers) {
+    const secteurs = [...new Set(dossiers.map(d => d.secteur).filter(Boolean))].sort();
+    const procs = [...new Set(dossiers.map(d => d.procedure).filter(Boolean))].sort();
+
+    const addOptions = (id, values) => {
+      const sel = document.getElementById(id);
+      values.forEach(v => {
+        const o = document.createElement('option');
+        o.value = v;
+        o.textContent = v;
+        sel.appendChild(o);
+      });
+    };
+
+    addOptions('f-secteur', secteurs);
+    addOptions('f-procedure', procs);
+  }
+
+  /* ── Format date ── */
+
+  function formatDate(filename) {
+    const m = filename.match(/rapport_(\d{4})(\d{2})(\d{2})\.md/);
+    if (!m) return filename;
+    return `Rapport du ${m[3]}/${m[2]}/${m[1]}`;
+  }
+
+  /* ── Boot ── */
+
+  async function init() {
+    try {
+      const filename = await findLatestRapport();
+      document.getElementById('rapport-date').textContent = formatDate(filename);
+
+      const md = await fetchRaw(filename);
+      allDossiers = parseRapport(md);
+
+      if (!allDossiers.length) throw new Error('Aucun dossier trouvé dans le rapport. Vérifiez le format Markdown.');
+
+      populateFilters(allDossiers);
+
+      document.getElementById('f-secteur').addEventListener('change', render);
+      document.getElementById('f-urgence').addEventListener('change', render);
+      document.getElementById('f-procedure').addEventListener('change', render);
+
+      const sortBtn = document.getElementById('sort-score');
+      sortBtn.addEventListener('click', () => {
+        sortByScore = !sortByScore;
+        sortBtn.classList.toggle('active', sortByScore);
+        render();
+      });
+
+      render();
+    } catch (err) {
+      document.getElementById('rapport-date').textContent = 'Erreur';
+      document.getElementById('grid').innerHTML = `<div class="state-screen">
+        <div class="icon">⚠️</div>
+        <p style="color:#b92b2b">${e(err.message)}</p>
+        <small>Vérifiez que le dépôt est public et qu'il contient un fichier rapport_YYYYMMDD.md</small>
+      </div>`;
+    }
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
