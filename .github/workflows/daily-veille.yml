@@ -1,0 +1,39 @@
+name: Veille MASARE quotidienne
+
+on:
+  schedule:
+    # Chaque jour à 08:00 CET (07:00 UTC)
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  veille:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Exécuter veille MASARE
+        run: |
+          chmod +x daily_veille.sh
+          bash daily_veille.sh
+
+      - name: Commit rapport (si changements)
+        run: |
+          git config user.email "action@github.com"
+          git config user.name "MASARE Veille Bot"
+          git add rapport_*.md
+          git commit -m "Veille automatisée — $(date +%Y-%m-%d)" || echo "Aucun changement"
+          git push
+
+      - name: Notification
+        if: always()
+        run: echo "✅ Veille exécutée — Rapports disponibles dans le repo"
