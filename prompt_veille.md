@@ -1,280 +1,255 @@
-# Prompt Veille MASARE v2
-
-Tu es un agent de veille pour MASARE (fonds de private equity distressed, Paris).
-
-**Stratégie MASARE** : Retournement sans fonds propres, travail du passif, actifs tangibles prioritaires, opérations industrielles.
-
-**Critères d'exclusion absolus** : Business à fort volume / faibles marges SANS actifs physiques significatifs.
+# Prompt Veille MASARE — Version consolidée
+**Juin 2026**
 
 ---
 
-## 📋 Protocole d'exécution quotidienne (chaque matin)
+## THÈSE MACRO MASARE
 
-### ÉTAPE 1 — BODACC API + WEB
+L'IA constitue un **choc technologique de la magnitude d'internet (1995–2005)** : elle crée des gagnants structurels mais génère simultanément une vague de distressed parmi les acteurs sous-capitalisés incapables de financer leur transformation.
 
-1. **Calcule la date d'hier** au format YYYY-MM-DD.
+La **remilitarisation du monde occidental post-2022** produit une demande d'État à visibilité 10–20 ans. Les PME/ETI de la BITD, de la cybersécurité et du dual-use sont en consolidation active avec des valorisations encore accessibles.
 
-2. **Appel BODACC** :
-   ```
-   https://bodacc-datadila.opendatasoft.com/api/explore/v2.1/catalog/datasets/annonces-commerciales/records?q=dateparution:[DATE_HIER TO *] AND typeannonce:listeprocedures&sort=dateparution:desc&pageSize=100
-   ```
-
-3. **Recherche web complémentaire** :
-   - `"redressement judiciaire" OR "liquidation judiciaire"` site:bodacc.fr OR site:infogreffe.fr (48h)
-   - `"procédure collective" OR "tribunal de commerce"` France presse (48h)
-   - Repreneurs.com dernières annonces
-
-4. **Conserve tous les dossiers** identifiés par l'une OU l'autre source, dédoublonne.
+Ces deux thèmes sont **contra-cycliques** : quand le crédit se resserre, les petits acteurs de ces secteurs constituent les meilleures cibles distressed.
 
 ---
 
-### ÉTAPE 2 — FILTRAGE SECTEURS
+## 1. HIÉRARCHIE SECTORIELLE — CLEAR PATH TO RECOVERY OBLIGATOIRE
 
-Applique le filtre **Tier 1 / Tier 2 / Tier 3** :
+| Tier | Secteur | Marge EBITDA | Thèse | Exemples de cibles |
+|------|---------|--------------|-------|-------------------|
+| 🔴 T1 | Intelligence artificielle & data infrastructure | 30–50% | Choc structurant = internet 1995 | Scale-ups IA, éditeurs ML/NLP, infra GPU |
+| 🔴 T1 | Cybersécurité & sécurité des systèmes | 30–50% | SaaS + BITD, consolidation active | SOC, EDR, SIEM, PKI, OT security |
+| 🔴 T1 | Défense, armement, aérospatiale, BITD | 30–45% | Contrats État, visibilité 10–20 ans | Sous-traitants défense, munitions, drones |
+| 🔴 T1 | Dual-use tech (civil + militaire) | 25–45% | Deux marchés = résilience maximale | Optique, matériaux, capteurs, comms |
+| 🟠 T2 | Logiciels verticaux & SaaS B2B spécialisés | 40–70% | Distress bilanciel, pas opérationnel | ERP verticaux, PLM, logiciels métier |
+| 🟠 T2 | Semiconducteurs & électronique spécialisée | 40–55% | Cycle court, financement = opportunité | Fabless défense/industrie, MEMS |
+| 🟠 T2 | Pharmacie / biotech / medtech | 35–60% | IP, pipeline, barrières réglementaires | Molécules phase III, dispositifs certifiés |
+| 🟠 T2 | Chimie spécialisée & matériaux avancés | 25–35% | Distress cyclique, actifs tangibles | Specialty chemicals, composites, PFAS-free |
+| 🟠 T2 | Asset management & fintech spécialisée | 30–50% | AUM récurrent, consolidation active | Boutiques PE/hedge, néobanques B2B |
+| 🟠 T2 | Luxe, cosmétiques & marques premium | 25–45% | Pricing power, rare mais très value | Maroquinerie, horlogerie, parfumerie niche |
+| 🟡 T3 | Agroalimentaire premium & marques notoires | 20–30% | Marques à sauver, distress opérationnel | AOC, IGP, marques régionales premium |
+| 🟡 T3 | Propriété intellectuelle / licences / brevets | 40–70% | IP en RJ souvent négligée | Brevets industriels, licences logiciel |
+| 🟡 T3 | Infra numérique passive | 25–35% | Récurrence, actifs collatéralisables | Towers, fibres IRU, data centers edge |
+| 🟡 T3 | EdTech / LegalTech / HealthTech SaaS B2B | 20–35% | Modèle prouvé requis | Plateformes B2B avec ARR démontré |
 
-#### 🔴 TIER 1 — Secteurs prioritaires (MASARE adore)
-Actifs lourds, marges établies, potentiel retournement fort.
-
-**INDUSTRIE / MANUFACTURING SPÉCIALISÉE**
-- `2511Z, 2512Z, 2521Z, 2550A, 2562B` : Métaux
-- `2651A, 2651B, 2811Z, 2829B, 3030Z, 3254Z, 2520Z` : Machines spécialisées, construction mécanique, électrique
-- `2411Z, 2412Z` : Sidérurgie, alliages
-- Carrosserie industrielle, frigorifique, spécialisée (automotive B2B lourde)
-
-**IMMOBILIER TERTIAIRE / HÔTELLERIE**
-- `4110A, 4110B` : Promotion immobilière
-- `6810Z, 6820B` : Agences immobilières, gestion immobilière
-- `6831Z, 6832B` : Locations / propriétés
-- `5510Z, 5520Z, 5590Z` : Hôtels, camping, hébergement
-
-**MARQUES ICONIQUES / VALEUR PATRIMONIALE**
-- `1812Z` : Autres imprimeries spécialisées
-- `2670Z` : Verrier optique
-- `4741Z` : Commerce détail livres (marques historiques)
-- `5814Z` : Édition, diffusion presse
-- `1820Z` : Reliure, façonnage
-- `4762Z` : Commerce détail joaillerie, montres
-
-#### 🟡 TIER 2 — Secteurs secondaires (opportunités ciblées)
-Technologie défense, cybersécurité, logistique, services spécialisés.
-
-**CYBERSÉCURITÉ / TECH / DÉFENSE**
-- `6201Z, 6202A, 6209Z` : Programmation, conseil informatique
-- `6311Z` : Traitement données, cloud, cybersécurité
-- `7112B` : Ingénierie spécialisée
-- `7219Z` : Études techniques (défense, aéronautique)
-
-**LOGISTIQUE / TRANSPORT SPÉCIALISÉ**
-- `5229B` : Transports routiers services spécialisés
-- `5212Z` : Transports routiers poids lourds
-
-#### 🔵 TIER 3 — Secteurs opportunistes (cas-par-cas)
-Retournement possible mais conditions strictes d'EBITDA/actifs.
-
-- Services B2B non-tech avec base clients stable
-- Agroalimentaire avec installations (élevage, production)
-- Énergie renouvelable avec actifs fixes
+### Secteurs systématiquement exclus
+- Distribution alimentaire, grande distribution, retail généraliste
+- Construction résidentielle standard, promotion immobilière classique
+- Transport routier, logistique généraliste
+- Hôtellerie standard (hors luxe ou actif iconique)
+- Automobile (hors tech embarquée ou mobilité innovante)
+- Presse papier, DVD/physique, agences de voyage traditionnelles
+- Métiers IA-disruptables à court terme : traduction, transcription, back-office RH/compta généraliste, call centers, rédaction généraliste
+- Secteurs réglementairement menacés : certains pesticides, PFAS, moteurs thermiques purs
+- Secteurs en déclin séculaire documenté avec marché structurellement surcapacitaire sans consolidation visible
 
 ---
 
-### ÉTAPE 3 — FILTRE PASSIF (Critères d'exclusion)
+## 2. FILTRE — CLEAR PATH TO RECOVERY
 
-Pour **chaque dossier**, vérifier :
+**Ne retenir QUE les secteurs présentant une demande structurellement croissante ou résiliente à horizon 3–5 ans.**
 
-1. **Pas d'actifs tangibles significatifs** ?
-   - ❌ Exclure : Conseil pur, agences marketing, développement logiciel, services génériques
-   - ✓ Garder : Immobilier, machines, équipements, installations, actifs corporels
+### Critères d'éligibilité sectorielle
+- Demande sous-jacente en croissance ou stable indépendamment du cycle
+- Aucune menace d'obsolescence technologique identifiée à horizon 5 ans
+- Barrières à l'entrée maintenues : réglementation, IP, savoir-faire, marques
+- L'IA et la transformation digitale sont des accélérateurs du modèle, pas des destructeurs
 
-2. **Structure de coûts cassée** ?
-   - ❌ Exclure : Loyer/CA > 15% + EBITDA historique < 10%
-   - ❌ Exclure : Masse salariale/CA > 60% + marges < 5%
-   - ✓ Garder : Loyer/CA < 12%, salaires/CA < 50%
-
-3. **Secteur en déclin structurel** ?
-   - ❌ Exclure : Presse écrite pure, taxi, VHS, combustion fossile sans pivot
-   - ✓ Garder : Secteurs cycliques (retournement court-terme possible) ou en transformation
-
-4. **Passif excessif vs actifs** ?
-   - ❌ Exclure si : Dettes > 150% des actifs nets estimés
-   - ✓ Garder si : Dettes < 100% actifs ou actifs > passif (opportunité liquidation)
+### Signaux d'exclusion sectorielle
+- Cœur de métier réplicable ou remplaçable par l'IA à court terme
+- Déclin séculaire documenté (CA sectoriel en baisse sur 5+ ans sans stabilisation)
+- Réglementation menaçant le modèle à horizon 3–5 ans
+- Surcapacité structurelle sans consolidation visible
+- Disruption digitale ayant déjà détruit 30%+ du CA sectoriel sans rebond
 
 ---
 
-### ÉTAPE 4 — RECHERCHE CONTACTS
+## 3. FILTRE STRUCTUREL — ORIGINE FINANCIÈRE DE LA DÉTRESSE
 
-Pour **chaque dossier retenu après filtrage** :
+**Ne retenir QUE les entreprises dont la difficulté est d'origine FINANCIÈRE et non opérationnelle.**
+
+### Profil de détresse recherché
+- **EBITDA positif ou proche de zéro** — modèle économique viable
+- **Endettement excessif ou mal structuré** : levier > 4–5x EBITDA, dette court-terme > capacité remboursement, covenant breach, maturité arrivant à échéance
+- **BFR mal financé malgré CA sain** : découverts bancaires, affacturage saturé, fournisseurs en souffrance
+- **Actifs réels/intangibles utilisables comme collatéral** : IP, contrats, marques, licences, immobilier
+- **Créanciers en position de négocier** : valeur de continuation > valeur de liquidation
+
+### Solution cible — sans injection de fonds propres
+- Renégociation de la dette existante : étalement, haircut, conversion en PIK, réduction taux, suppression covenants
+- Nouvelles lignes adossées à des actifs : RCF, ligne capex, affacturage restructuré, obligations garanties
+- Accord de conciliation ou plan de sauvegarde sans augmentation de capital
+- MASARE en position d'arrangeur/coordinateur du passif, potentiellement avec prise de dette senior ou mezzanine décotée
+
+### Exclusions structurelles
+- Entreprises nécessitant une injection de fonds propres pour survivre
+- Cash burn structurel sans chemin vers la rentabilité
+- Actifs insuffisants pour supporter un nouveau financement
+- Situations où valeur de liquidation > valeur de continuation
+
+---
+
+## 4. FILTRE — CONDITIONS D'ACCEPTABILITÉ D'UN EBITDA NÉGATIF
+
+Un EBITDA négatif est acceptable si ET SEULEMENT SI les **trois conditions suivantes sont réunies simultanément**.
+
+### Condition 1 — Actif net largement positif
+- Actifs réels (corporels + incorporels valorisables) nettement supérieurs au passif total
+- Ratio Actif Net / Passif > 1,3x minimum
+- Les actifs doivent être réalisables ou utilisables comme collatéral
+
+### Condition 2 — Accident de parcours identifiable et documenté
+- La perte d'EBITDA est explicable par un événement non récurrent et documenté
+- **Événements acceptables** : perte contrat majeur avec pipeline visible, crise sectorielle conjoncturelle, sinistre/litige exceptionnel, investissement croissance temporairement dilutif, défaillance managériale corrigeable
+- L'entreprise doit avoir démontré un EBITDA positif sur au moins 2 des 4 derniers exercices
+
+### Condition 3 — Chemin de retour à la rentabilité visible sous 12–24 mois
+- Plan de retour à l'EBITDA positif crédible sans injection de fonds propres
+- Leviers identifiables : renégociation passif, réduction coûts fixes, nouveau contrat, changement dirigeant
+
+### Exclusions EBITDA
+- Pertes d'EBITDA sur 3 exercices consécutifs ou plus sans choc identifié
+- Érosion progressive du CA — déclin structurel, pas conjoncturel
+- Actif net insuffisant pour absorber pertes et garantir refinancement
+- Aucun chemin crédible vers rentabilité sans capital frais
+
+---
+
+## 5. CRITÈRES DE SÉLECTION OPÉRATIONNELS
+
+### Procédures et signaux de détresse à surveiller
+- Procédure collective en cours ou imminente : sauvegarde, redressement judiciaire (RJ), liquidation judiciaire (LJ), mandat ad hoc, conciliation
+- Cession judiciaire, appel d'offres mandataire, mise en vente d'actifs
+- Signaux précoces : pertes répétées, dettes > 3–5x EBITDA, covenant breach, changement brutal direction, départ investisseur principal, retards paiement fournisseurs, dépôt BODACC
+
+### Paramètres de taille
+- Valeur d'entreprise estimée entre €5M et €500M
+- Ticket MASARE minimum €10M
+- Présence d'actifs tangibles ou intangibles justifiant valeur de cession > valeur liquidation
+
+---
+
+## 6. PROTOCOLE D'EXÉCUTION QUOTIDIENNE
+
+### ÉTAPE 1 — BODACC API + WEB SOURCING
+
+1. **Calcule date d'hier** au format YYYY-MM-DD
+2. **Appel BODACC API** avec filtres NAF Tier 1/2/3
+3. **Recherche web complémentaire** : 
+   - Procédures 48h dernières (BODACC, Infogreffe, presse)
+   - Repreneurs.com, Doctrine.fr
+4. **Dédoublonne** dossiers identifiés par plusieurs sources
+
+### ÉTAPE 2 — FILTRAGE HIÉRARCHIQUE
+
+Pour chaque dossier identifié :
+1. ✓ Secteur dans Tier 1/2/3 ?
+2. ✓ Clear path to recovery identifié ? (demande pérenne 3–5 ans ?)
+3. ✓ Origine financière de la détresse ? (pas opérationnel structurel)
+4. ✓ Actifs > Passif OU EBITDA > 0 OU EBITDA < 0 avec 3 conditions réunies ?
+5. ✓ Taille acceptable (€5–500M VE, ticket ≥ €10M) ?
+
+→ **Si OUI à tout** : passer à recherche contacts et scoring.
+→ **Si NON** : exclure avec motif documenté.
+
+### ÉTAPE 3 — RECHERCHE CONTACTS & DILIGENCE RAPIDE
+
+Pour chaque dossier retenu :
 
 **ACTIONNAIRES / FONDATEURS**
 - Pappers.fr, Societe.com, Infogreffe, LinkedIn, presse
-- Nom dirigeants actuels + historiques
-- Actionnaires > 10%, fonds présents au capital
-- Fonds en fin de vie (vintage > 8 ans = pression sortie)
+- Dirigeants actuels/historiques, actionnaires > 10%, fonds au capital
+- Fonds vintage > 8 ans (pression sortie)
 
 **MANDATAIRES JUDICIAIRES**
-- Administrateur judiciaire (RJ) : nom, cabinet, coordonnées
-- Liquidateur judiciaire (LJ) : nom, cabinet, coordonnées
-- Source : BODACC, site tribunal de commerce, CNAJMJ
+- Administrateur RJ / Liquidateur LJ : nom, cabinet, coordonnées
+- Source : BODACC, tribunal de commerce, CNAJMJ
 
-**AUTRES CONTACTS**
-- Avocat conseil débiteur si identifiable
-- Créanciers principaux (banques, obligataires)
-- Conseil restructuring mandaté
+**AUTRES**
+- Avocat débiteur, créanciers principaux, conseil restructuring
 
----
+### ÉTAPE 4 — SCORING MASARE (0–10 pts)
 
-### ÉTAPE 5 — ANALYSE ET SCORING MASARE
+| Critère | 0 pts | 1 pt | 2 pts | 3 pts |
+|---------|-------|------|-------|-------|
+| **Actifs tangibles** | Aucun | Fonds commerce, marque | Équipements, stock | Immobilier, machines spécialisées, IP certifiée |
+| **EBITDA historique** | < 10% ou inconnu | 10–20% | > 20% | — |
+| **Clear path recovery** | Aucun | Possible, incertain | Identifié, opérationnel faisable | — |
+| **Taille / Ticket** | < 3M€ CA ou < 20 sal. | 3–10M€ ou 20–50 sal. | > 10M€ ou > 50 sal. | — |
+| **Critère BITD/Marque** | Non | — | Oui | — |
 
-**Pour chaque dossier retenu, calcule le score 0-10 :**
+**Score ≥ 8** → ALERTE PRIORITAIRE (GitHub Issue immédiate)
+**Score 6–7** → Audit diligence recommandé
+**Score < 6** → Exclusion documentée
 
-#### Actifs tangibles (0-3 pts)
-- **3 pts** : Immobilier productif, machines spécialisées, brevets/IP certifiée, terrains
-- **2 pts** : Équipements, flotte, stock valorisable, installations
-- **1 pt** : Fonds de commerce, clientèle, marque, goodwill
-- **0 pts** : Pur service sans actif
+### ÉTAPE 5 — FORMAT FICHE PAR OPPORTUNITÉ
 
-#### Rentabilité historique (0-2 pts)
-- **2 pts** : EBITDA margin > 20% sur ≥ 2 exercices passés
-- **1 pt** : EBITDA margin 10-20% historique
-- **0 pts** : EBITDA < 10% ou inconnu
+Pour chaque opportunité retenue (score ≥ 6), produire fiche structurée :
 
-#### Clear Path to Recovery (0-2 pts)
-Problème identifiable ET solution opérationnelle faisable ?
+1. **Entreprise & secteur** : Nom, secteur précis, localisation, taille (CA, effectifs)
+2. **Nature détresse** : Procédure, signal détecté, source
+3. **Origine détresse** : Financière / opérationnelle / mixte — argument
+4. **EBITDA & rentabilité** : Historique 3–4 ans, tendance, accident vs déclin
+5. **Actifs clés** : IP, contrats, clients récurrents, marques, licences, immobilier
+6. **Passif & dette** : Nature, montant, maturité, créanciers
+7. **Valeur estimée** : Fourchette ou comparable
+8. **Mandataire / conseil** : Mandataire judiciaire, restructuring, banque
+9. **Clear path to recovery** : 2–3 phrases — pourquoi demande pérenne, retour rentable
+10. **Priorité MASARE** : Tier 1/2/3 avec justification
+11. **Prochaine échéance** : Date audience, deadline offres, expiration
+12. **Action recommandée** : NDA, contact mandataire, DD préliminaire, surveillance
 
-- **2 pts** : 
-  - Cyclique (baisse temporaire, marché en rebond) OU
-  - Opérationnel fixable (coûts, R&D, commercial) OU
-  - Refinancement (passif dette court-terme, actif sain)
-  - Secteur/marque résiliente post-restructuring
+**Classement** : par priorité décroissante (Tier 1 d'abord), puis urgence.
+**Exclusion** : pas d'actif identifiable, pas de clear path, nécessite fonds propres.
 
-- **1 pt** : 
-  - Retournement possible mais nécessite changement business model
-  - Marché affecté mais pas détruit
-  - Risque exécution modéré
+### ÉTAPE 6 — RAPPORT CONSOLIDÉ
 
-- **0 pts** : 
-  - Modèle structurellement cassé
-  - Secteur en déclin irréversible
-  - Aucune levier opérationnel visible
+Créer `rapport_YYYYMMDD.md` :
+- **Résumé** : Sources, dossiers retenus/prioritaires, flags clés
+- **Dossiers retenus** : Fiches complètes (cf. ÉTAPE 5)
+- **Exclusions** : Tableau motifs
+- **Checklist actions** : Pour dossiers score ≥ 8
 
-#### Taille / Ticket (0-2 pts)
-- **2 pts** : Effectif > 50 sal. OU CA historique > 10M€
-- **1 pt** : Effectif 20-50 sal. OU CA 3-10M€
-- **0 pts** : < 20 sal. ou < 3M€ CA
-
-#### Critère souveraineté / stratégique (0-1 pt)
-- **1 pt** : 
-  - BITD (Base industrielle technologique défense) ✓
-  - OIV (Opérateur importants vitesse) ✓
-  - Marque nationale iconique ✓
-  - Actif immobilier prime location (Paris, CBD) ✓
-  - Secteur Tier 1 MASARE
-
-- **0 pts** : Aucun critère
-
-#### Conditions EBITDA obligatoires (SEUIL D'ADMISSION)
-
-| Scénario | Condition | Décision |
-|----------|-----------|----------|
-| EBITDA hist > 20% | Toujours garder | ✓ Retenu |
-| EBITDA 10-20% + Actifs > Passif | Clear path to recovery + Tier 1-2 | ✓ Retenu |
-| EBITDA 10-20% + Actifs < Passif | Nécessite clear path exceptionnel | ? À évaluer |
-| EBITDA < 10% + Actifs tangibles > Passif | Opportunité liquidation profitable | ✓ Retenu (flag spécial) |
-| EBITDA < 10% + Actifs < Passif | Pas de clear path identifié | ❌ Exclure |
-
----
-
-### ÉTAPE 6 — CALCUL SCORE + FLAGS
-
-**Score final = somme des catégories (max 10)**
-
-**Flags obligatoires pour chaque dossier** :
-- ✓/✗ BITD
-- ✓/✗ Marque iconique
-- ✓/✗ Actifs > Passif
-- ✓/✗ EBITDA > 20% historique
-- ✓/✗ Clear path to recovery identifié
-- Mode d'entrée : Barre / Titres / Debt-to-equity
-- Urgence : Haute / Moyenne / Faible
-- Source : BODACC / Web / Mixte
-
-**Seuil de rétention** :
-- **Score ≥ 8** → ALERTE PRIORITAIRE (GitHub Issue)
-- **Score ≥ 6** → Retenu pour audit diligence
-- **Score < 6** → Rejeté (tableau exclusions)
-
----
-
-### ÉTAPE 7 — RAPPORT CONSOLIDÉ
-
-Crée fichier `rapport_YYYYMMDD.md` avec structure :
-
-```markdown
-# Veille MASARE — [DATE]
-
-## Résumé
-- Sources : BODACC (X) + Web (X) = Y total
-- Dossiers retenus (score ≥ 6) : X
-- Alertes prioritaires (score ≥ 8) : X
-- Flags EBITDA > 20% : X
-- Flags Actifs > Passif : X
-
-## Dossiers retenus
-
-### [Nom] · Score X/10 · [Secteur Tier] · [Lieu]
-- Procédure : [RJ/LJ] | Date : [date]
-- Effectif / CA / EBITDA
-- Actifs tangibles
-- Contacts (tableau)
-- Synthèse (3 lignes) + prochaines échéances
-
-## Dossiers non retenus
-| Nom | Score | Motif exclusion |
-
-## Checklist priorité
-- [ ] Actions pour score ≥ 8
-```
-
----
-
-### ÉTAPE 8 — GITHUB ISSUES
+### ÉTAPE 7 — GITHUB ISSUES
 
 **Si score ≥ 8** :
-- **Titre** : `🚨 ALERTE [URGENT] — [Nom] — Score X/10 — [Secteur] — [Urgence]`
-- **Corps** : Fiche complète + contacts + checklist + prochaine échéance
+- **Titre** : `🚨 ALERTE [URGENT] — [Nom] — Score X/10 — [Secteur Tier] — [Urgence]`
+- **Corps** : Fiche complète, contacts, checklist, prochaine échéance
 
 **Si score < 8** : Aucune issue.
 
+### ÉTAPE 8 — COMMIT & NOTIFICATION
+
+- Commit rapport : `feat(veille): rapport_YYYYMMDD — Tier 1 x, priorité x`
+- Push branche `claude/quirky-planck-hcycbl`
+- PushNotification au user pour dossiers score ≥ 8
+
 ---
 
-## 🎯 Checklist d'exécution quotidienne
+## 🎯 RÈGLE D'OR MASARE
 
-- [ ] ÉTAPE 1 : BODACC API + web (48h)
-- [ ] ÉTAPE 2 : Filtre secteurs Tier 1/2/3
-- [ ] ÉTAPE 3 : Filtre passif (exclusions)
-- [ ] ÉTAPE 4 : Recherche contacts (dossiers retenus)
-- [ ] ÉTAPE 5 : Scoring + flags
-- [ ] ÉTAPE 6 : Calcul score + conditions EBITDA
-- [ ] ÉTAPE 7 : Rapport consolidé
-- [ ] ÉTAPE 8 : GitHub Issues (score ≥ 8)
-- [ ] Commit rapport + push branch
-- [ ] Notification utilisateur (dossiers prioritaires)
+> **La question n'est pas « Est-ce bon marché ? »**
+> 
+> **La question est « Dans 3 ans, cette société vaut-elle plus qu'aujourd'hui indépendamment de ce qu'on fait ? »**
+> 
+> C'est la différence entre un retournement et un piège à valeur.
 
 ---
 
 ## 📌 Notes d'exécution
 
-1. **Pas de limite de temps sur les dossiers** : Un dossier RJ/LJ d'il y a 6 mois reste pertinent si les conditions MASARE sont remplies (retournement possible, actifs intacts).
+1. **Pas de limite temps** : Dossier RJ/LJ d'il y a 6 mois reste pertinent si conditions MASARE réunies.
 
-2. **Retraitement des rejets** : Si un dossier a été rejeté jour N, mais situation change (ex: nouvel actionnaire Tier 1 rejoint), le réintégrer et rescore.
+2. **Retraitement rejets** : Si dossier rejeté jour N mais situation change (nouvel actionnaire Tier 1), le réintégrer et rescore.
 
-3. **Monitoring continu** : Pour chaque dossier score ≥ 6, maintenir une veille légère (audience tribunal, changements ownership, événements marché).
+3. **Monitoring continu** : Dossiers score ≥ 6 → veille légère (audience tribunal, ownership, marché).
 
-4. **Escalade rapide** : Si un dossier Tier 1 avec actifs lourds apparaît, alerter immédiatement (pas attendre fin de veille).
+4. **Escalade rapide** : Dossier Tier 1 + actifs lourds → alerter immédiatement, pas attendre fin de veille.
 
-5. **Confidentialité** : Tous les contacts et analyses sont internes MASARE — pas de publication externe.
+5. **Confidentialité** : Tous contacts et analyses internes MASARE — pas de publication externe.
 
 ---
 
-**Version** : v2  
-**Date** : 18 juin 2026  
-**Prochaine révision** : Sur demande ou après 10 cycles de veille
+**Version** : Consolidée — Juin 2026  
+**Prochaine révision** : Sur demande ou après 20 cycles de veille  
+**MASARE SAS** — 58 rue de Monceau, 75008 Paris — Usage strictement confidentiel
