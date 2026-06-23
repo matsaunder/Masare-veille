@@ -43,19 +43,32 @@ def get_all_issues(token: str, state="all"):
     return issues
 
 def extract_siren(issue_body: str) -> str:
-    """Extrait SIREN du body de l'issue."""
+    """Extrait SIREN du body de l'issue (géère plusieurs formats)."""
     if not issue_body:
         return None
 
     lines = issue_body.split("\n")
     for line in lines:
-        if "SIREN" in line and ":" in line:
-            # Format: "**SIREN** : 412 897 563"
-            parts = line.split(":")
-            if len(parts) > 1:
-                siren = parts[1].strip().replace(" ", "")
-                if siren.isdigit() and len(siren) == 9:
-                    return siren
+        if "SIREN" in line:
+            # Format 1: "**SIREN** : 412 897 563" ou "**SIREN :** 412897563" ou "**SIREN :** 521474445"
+            if ":" in line:
+                # Split by colon and get everything after
+                parts = line.split(":")
+                if len(parts) > 1:
+                    # Join all parts after first colon (in case there are multiple colons)
+                    siren_part = ":".join(parts[1:]).strip()
+                    # Remove spaces, pipes, asterisks
+                    siren = siren_part.replace(" ", "").replace("|", "").replace("*", "").strip()
+                    if siren.isdigit() and len(siren) == 9:
+                        return siren
+
+            # Format 2: "| **SIREN** | 931 037 998 |"
+            if "|" in line:
+                parts = line.split("|")
+                for part in parts:
+                    cleaned = part.strip().replace(" ", "").replace("*", "")
+                    if cleaned.isdigit() and len(cleaned) == 9:
+                        return cleaned
 
     return None
 
