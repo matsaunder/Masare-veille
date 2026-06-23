@@ -147,14 +147,13 @@ def main():
         print(f"   ✓ Garder #{master_issue['number']} (plus récente — {master_issue['created_at'][:10]})")
         print()
 
-        # Confirmation avant action
-        if input("   Procéder ? (y/n) : ").lower() == "y":
-            for issue in duplicates_to_close:
-                close_issue(
-                    issue["number"],
-                    f"Doublon fusionné avec issue #{master_issue['number']}",
-                    TOKEN
-                )
+        # Auto-close duplicates (no interactive prompt)
+        for issue in duplicates_to_close:
+            close_issue(
+                issue["number"],
+                f"Doublon fusionné avec issue #{master_issue['number']}",
+                TOKEN
+            )
         print()
 
     print("="*60)
