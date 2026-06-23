@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Veille Distressed MASARE v2 — Production avec création issues GitHub automatique
-Exécute les 6 étapes + crée issues si score >= 8
+Veille Distressed MASARE v3 — Production avec déduplication issues
+Exécute les 6 étapes + crée/met à jour issues sans doublons
 """
 
 import json
@@ -142,14 +142,60 @@ def generate_rapport(dossiers_retenus: List[Dossier], date_rapport: str) -> str:
 # ÉTAPE 6 — GITHUB ISSUES (VIA API)
 # =====================================================================
 
+def find_existing_issue(siren: str, token: str) -> Optional[dict]:
+    """Cherche issue existante par SIREN pour éviter doublons."""
+    if not siren or siren == "ND" or not token:
+        return None
+
+    url = f"https://api.github.com/repos/matsaunder/masare-veille/issues?state=open&per_page=100"
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "MASARE",
+    }
+
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=10) as response:
+            issues = json.loads(response.read().decode())
+            for issue in issues:
+                if siren in issue.get("body", ""):
+                    return issue
+            return None
+    except:
+        return None
+
+def update_github_issue(issue_num: int, titre: str, corps: str, labels: list, token: str) -> bool:
+    """Met à jour une issue existante."""
+    payload = {"title": titre, "body": corps, "labels": labels}
+    url = f"https://api.github.com/repos/matsaunder/masare-veille/issues/{issue_num}"
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "MASARE",
+    }
+
+    try:
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode(),
+            headers=headers,
+            method="PATCH"
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            print(f"🔄 Issue #{issue_num} mise à jour", file=sys.stderr)
+            return True
+    except Exception as e:
+        print(f"⚠️  GitHub update: {str(e)[:60]}", file=sys.stderr)
+        return False
+
 def create_github_issue(dossier: Dossier) -> bool:
-    """Crée issue GitHub via API REST."""
+    """Crée ou met à jour issue GitHub (avec déduplication par SIREN)."""
     if dossier.score < 8:
         return False
 
     TOKEN = os.environ.get("GITHUB_TOKEN", "")
     if not TOKEN:
-        print(f"⚠️  GITHUB_TOKEN non défini", file=sys.stderr)
         return False
 
     urgence_label = "URGENT" if dossier.urgence == "haute" else "STANDARD"
@@ -158,8 +204,9 @@ def create_github_issue(dossier: Dossier) -> bool:
     corps = f"""## {dossier.nom}
 
 **SIREN** : {dossier.siren}
-**Score** : {dossier.score:.0f}/10
+**Score MASARE** : {dossier.score:.0f}/10
 **Urgence** : {dossier.urgence}
+**Mis à jour** : {datetime.now().strftime('%Y-%m-%d %H:%M')}
 
 | Champ | Valeur |
 |-------|--------|
@@ -167,23 +214,29 @@ def create_github_issue(dossier: Dossier) -> bool:
 | Tribunal | {dossier.tribunal or 'ND'} |
 | Secteur | {NAF_TARGETS.get(dossier.naf, dossier.naf)} |
 | CA | {dossier.ca_estim or 'ND'} M€ |
+| Effectif | {dossier.effectif or 'ND'} |
+| EBITDA | {dossier.ebitda_historique} |
+| Actifs | {dossier.actifs_descrip or 'À identifier'} |
 | BITD | {'Oui' if dossier.flag_bitd else 'Non'} |
 | Marque | {'Oui' if dossier.flag_marque else 'Non'} |
 
 ---
-*Veille MASARE — {datetime.now().strftime('%Y-%m-%d %H:%M')}*
+*Veille MASARE harmonisée — Pas de doublons*
 """
 
     labels = [f"alert-{dossier.urgence}", f"score-{int(dossier.score)}"]
     if dossier.flag_bitd:
         labels.append("BITD")
+    if dossier.flag_marque:
+        labels.append("marque")
 
-    payload = {
-        "title": titre,
-        "body": corps,
-        "labels": labels,
-    }
+    # ===== DÉDUPLICATION : Chercher issue existante =====
+    existing = find_existing_issue(dossier.siren, TOKEN)
+    if existing:
+        return update_github_issue(existing["number"], titre, corps, labels, TOKEN)
 
+    # ===== CRÉER NOUVELLE ISSUE =====
+    payload = {"title": titre, "body": corps, "labels": labels}
     url = "https://api.github.com/repos/matsaunder/masare-veille/issues"
     headers = {
         "Authorization": f"token {TOKEN}",
@@ -200,11 +253,11 @@ def create_github_issue(dossier: Dossier) -> bool:
         )
         with urllib.request.urlopen(req, timeout=10) as response:
             result = json.loads(response.read().decode())
-            issue_url = result.get("html_url", "")
-            print(f"✓ Issue: {titre[:50]}...", file=sys.stderr)
+            issue_num = result.get("number", "?")
+            print(f"✓ Issue #{issue_num} créée: {titre[:40]}...", file=sys.stderr)
             return True
     except Exception as e:
-        print(f"⚠️  GitHub: {str(e)[:80]}", file=sys.stderr)
+        print(f"⚠️  GitHub create: {str(e)[:60]}", file=sys.stderr)
         return False
 
 # =====================================================================
