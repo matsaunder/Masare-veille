@@ -1,0 +1,40 @@
+name: Veille BODACC quotidienne
+
+on:
+  schedule:
+    - cron: '0 4 * * *'   # 5h Paris (heure d'hiver) / 6h (heure d'été)
+  workflow_dispatch:       # déclenchement manuel possible
+
+permissions:
+  contents: write
+
+jobs:
+  fetch-bodacc:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Dépendances
+        run: pip install requests
+
+      - name: Fetch BODACC & générer rapport
+        run: python scripts/bodacc.py
+
+      - name: Commit & push si nouveau rapport
+        run: |
+          git config user.name "MASARE Bot"
+          git config user.email "bot@masare.fr"
+          git add rapport_*.md
+          if git diff --cached --quiet; then
+            echo "Pas de nouveau rapport aujourd'hui."
+          else
+            git commit -m "Rapport veille BODACC $(date +%Y%m%d)"
+            git push
+          fi
