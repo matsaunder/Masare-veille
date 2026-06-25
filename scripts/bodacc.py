@@ -12,6 +12,15 @@ API = "https://bodacc-datadila.opendatasoft.com/api/explore/v2.1/catalog/dataset
 
 SCORE_MIN = 4  # seuil de sélection
 
+
+def s(val) -> str:
+    """Convertit n'importe quel champ BODACC en chaîne (gère les listes)."""
+    if val is None:
+        return ""
+    if isinstance(val, list):
+        return " ".join(str(v) for v in val if v is not None)
+    return str(val)
+
 # ── Secteurs ────────────────────────────────────────────────────────────────
 
 SECTEURS = [
@@ -31,7 +40,7 @@ SECTEURS = [
 BITD_KEYWORDS = ["aéronaut", "défense", "armement", "naval", "spatia", "missile", "militair"]
 
 
-def detect_secteur(activite: str, texte: str) -> tuple[str, bool]:
+def detect_secteur(activite: str, texte: str) -> "tuple[str, bool]":
     haystack = (activite + " " + texte).lower()
     for secteur, keywords in SECTEURS:
         if any(k in haystack for k in keywords):
@@ -40,7 +49,7 @@ def detect_secteur(activite: str, texte: str) -> tuple[str, bool]:
     return "Autres", False
 
 
-def detect_procedure(typeavis: str) -> tuple[str, str, int]:
+def detect_procedure(typeavis: str) -> "tuple[str, str, int]":
     t = typeavis.lower()
     if "redressement" in t:
         return "Redressement judiciaire", "Haute", 3
@@ -54,9 +63,9 @@ def detect_procedure(typeavis: str) -> tuple[str, str, int]:
 
 
 def score_dossier(annonce: dict) -> dict:
-    activite = annonce.get("activite") or ""
-    texte = annonce.get("publicationavis") or ""
-    typeavis = annonce.get("typeavis_lib") or ""
+    activite = s(annonce.get("activite"))
+    texte = s(annonce.get("publicationavis"))
+    typeavis = s(annonce.get("typeavis_lib"))
 
     procedure, urgence, proc_bonus = detect_procedure(typeavis)
     secteur, bitd = detect_secteur(activite, texte)
@@ -68,10 +77,14 @@ def score_dossier(annonce: dict) -> dict:
         score += 1
     score = min(10, score)
 
+    nom = s(annonce.get("denomination")).strip() or "—"
+    ville = s(annonce.get("ville")).strip().title() or "—"
+    siren = s(annonce.get("siren")) or "—"
+
     return {
-        "nom": (annonce.get("denomination") or "—").strip(),
-        "siren": annonce.get("siren") or "—",
-        "ville": (annonce.get("ville") or "—").strip().title(),
+        "nom": nom,
+        "siren": siren,
+        "ville": ville,
         "score": score,
         "secteur": secteur,
         "procedure": procedure,
@@ -85,10 +98,10 @@ def score_dossier(annonce: dict) -> dict:
 
 
 def build_synthese(annonce: dict) -> str:
-    activite = (annonce.get("activite") or "").strip()
-    typeavis = annonce.get("typeavis_lib") or ""
-    registre = (annonce.get("registre") or "").strip()
-    date_par = annonce.get("dateparution") or annonce.get("dateParution") or ""
+    activite = s(annonce.get("activite")).strip()
+    typeavis = s(annonce.get("typeavis_lib"))
+    registre = s(annonce.get("registre")).strip()
+    date_par = s(annonce.get("dateparution") or annonce.get("dateParution"))
 
     parts = []
     if activite:
@@ -100,8 +113,7 @@ def build_synthese(annonce: dict) -> str:
     if date_par:
         parts.append(f"Parution BODACC : {date_par}.")
 
-    texte = annonce.get("publicationavis") or ""
-    # Extrait les 300 premiers caractères utiles du texte
+    texte = s(annonce.get("publicationavis"))
     excerpt = re.sub(r"\s+", " ", texte).strip()[:300]
     if excerpt:
         parts.append(excerpt + ("…" if len(texte) > 300 else ""))
@@ -109,7 +121,8 @@ def build_synthese(annonce: dict) -> str:
     return " ".join(parts)
 
 
-def extract_contacts(texte: str) -> str:
+def extract_contacts(texte) -> str:
+    texte = s(texte)
     contacts = []
     patterns = [
         r"(administrateur judiciaire\s*:\s*[^\n;,\.]+)",
