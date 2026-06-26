@@ -3,6 +3,7 @@ Veille BODACC — Procédures collectives
 Récupère les annonces du jour, score les dossiers, génère rapport_YYYYMMDD.md
 """
 
+import json
 import requests
 import re
 import sys
@@ -13,16 +14,14 @@ API = "https://bodacc-datadila.opendatasoft.com/api/explore/v2.1/catalog/dataset
 SCORE_MIN = 4
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def s(val) -> str:
-    """Aplatit n'importe quel champ BODACC en chaîne propre."""
     if val is None:
         return ""
     if isinstance(val, list):
         return " ".join(str(v) for v in val if v is not None)
     if isinstance(val, dict):
-        # Essaie les clés texte courantes
         for k in ("texte", "value", "libelle", "denomination", "nom"):
             if k in val:
                 return s(val[k])
@@ -30,104 +29,172 @@ def s(val) -> str:
     return str(val)
 
 
+def extract_embedded_json(text: str) -> dict:
+    """Parse le premier objet JSON trouvé dans une chaîne de texte."""
+    start = text.find('{')
+    if start == -1:
+        return {}
+    depth = 0
+    for i, ch in enumerate(text[start:], start):
+        if ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[start:i + 1])
+                except Exception:
+                    return {}
+    return {}
+
+
 def debug_record(annonce: dict):
-    """Affiche tous les champs du premier enregistrement (logs GitHub Actions)."""
-    print("[DEBUG] Structure du premier enregistrement BODACC :", file=sys.stderr)
+    print("[DEBUG] Structure BODACC premier enregistrement :", file=sys.stderr)
     for key in sorted(annonce.keys()):
         val = annonce[key]
         preview = repr(val)
-        if len(preview) > 120:
-            preview = preview[:120] + "…"
+        if len(preview) > 200:
+            preview = preview[:200] + "…"
         print(f"  {key}: {preview}", file=sys.stderr)
 
 
-# ── Extraction robuste ────────────────────────────────────────────────────────
+# ── Extraction depuis le JSON embedded dans publicationavis ───────────────────
+
+def get_personne(annonce: dict) -> dict:
+    """Retourne le dict 'personne' depuis publicationavis JSON ou champs directs."""
+    # 1. Cherche dans les champs directs (ancienne structure API)
+    for nested_key in ("commercant", "personne", "entreprise", "debiteur"):
+        nested = annonce.get(nested_key)
+        if isinstance(nested, dict) and nested:
+            return nested
+
+    # 2. Parse le JSON embedded dans publicationavis
+    texte_brut = annonce.get("publicationavis") or ""
+    if isinstance(texte_brut, str) and '{' in texte_brut:
+        data = extract_embedded_json(texte_brut)
+        if data:
+            # Structure {"personne": {...}} ou directement la personne
+            return data.get("personne", data)
+
+    return {}
+
 
 def get_denomination(annonce: dict) -> str:
-    # Champs directs possibles selon version API BODACC
-    for field in ("denomination", "denomination_personne_morale", "nom_personne", "raisonsociale"):
+    # 1. Champ direct API
+    for field in ("denomination", "denomination_personne_morale", "raisonsociale"):
         v = s(annonce.get(field)).strip()
         if v:
             return v
-    # Cherche dans les objets imbriqués courants
-    for nested_key in ("commercant", "personne", "entreprise", "debiteur"):
-        nested = annonce.get(nested_key)
-        if isinstance(nested, dict):
-            for sub in ("denomination", "raisonsociale", "nom"):
-                v = s(nested.get(sub, "")).strip()
-                if v:
-                    return v
-    # Extraction depuis le texte de l'annonce
+
+    # 2. Depuis l'objet personne (JSON embedded ou champ direct)
+    personne = get_personne(annonce)
+    if personne:
+        d = personne.get("denomination") or personne.get("raisonsociale") or ""
+        if d:
+            return str(d).strip()
+        # Personne physique
+        nom = personne.get("nom") or ""
+        prenom = personne.get("prenom") or ""
+        if nom:
+            return f"{prenom} {nom}".strip() if prenom else str(nom).strip()
+
+    # 3. Regex sur tout le texte
     texte = get_full_text(annonce)
     for pat in (
-        r"(?:D[ée]nomination(?:\s+sociale)?\s*:?\s*)([A-ZÀ-Ÿ][^\n,;]{2,60}(?:SAS|SARL|SA|SCI|EURL|SNC|SCP|SCM|SASU))",
-        r"(?:Soci[eé]t[eé][^\n:]*:\s*)([A-ZÀ-Ÿ][^\n,;]{2,60}(?:SAS|SARL|SA|SCI|EURL|SNC|SCP|SCM|SASU))",
-        r"(?:la soci[eé]t[eé]\s+)([A-ZÀ-Ÿ][A-ZÀ-Ÿ\s\-\.&]{2,50}(?:SAS|SARL|SA|SCI|EURL|SNC|SCP))",
+        r'"denomination"\s*:\s*"([^"]{2,80})"',
+        r'D[ée]nomination\s*:?\s*([A-ZÀ-Ÿ][^\n,;]{2,60}(?:SAS|SARL|SA|SCI|EURL|SNC|SASU))',
     ):
-        m = re.search(pat, texte)
+        m = re.search(pat, texte, re.IGNORECASE)
         if m:
             return m.group(1).strip()
+
     return "—"
 
 
 def get_siren(annonce: dict) -> str:
-    # Champ direct
-    for field in ("siren", "siret", "numero_siren", "numerosiren"):
+    # 1. Champ direct
+    for field in ("siren", "siret", "numerosiren"):
         v = re.sub(r"\s+", "", s(annonce.get(field, "")))
         if re.match(r"^\d{9,14}$", v):
-            return v[:9]  # garde 9 chiffres SIREN
-    # Dans registre (souvent une liste contenant le SIREN)
+            return v[:9]
+
+    # 2. Dans registre (liste contenant souvent le SIREN brut)
     registre = annonce.get("registre")
     candidates = registre if isinstance(registre, list) else [s(registre)]
     for item in candidates:
         clean = re.sub(r"\s+", "", str(item))
         if re.match(r"^\d{9}$", clean):
             return clean
-    # Extraction textuelle
+
+    # 3. Dans l'objet personne → numeroImmatriculation → numeroIdentification
+    personne = get_personne(annonce)
+    if personne:
+        immat = personne.get("numeroImmatriculation") or {}
+        if isinstance(immat, dict):
+            num = re.sub(r"\s+", "", str(immat.get("numeroIdentification") or ""))
+            if re.match(r"^\d{9}$", num):
+                return num
+
+    # 4. Regex dans le texte
     texte = get_full_text(annonce)
     for pat in (
-        r"SIREN\s*[N°n°]*\s*[:\s]+(\d[\d\s]{6,10}\d)",
-        r"(?:n[°o]\s+)?RCS[^:]*[:\s]+(\d[\d\s]{6,10}\d)",
-        r"SIRET\s*[:\s]+(\d[\d\s]{11,16}\d)",
+        r'"numeroIdentification"\s*:\s*"([\d\s]{9,14})"',
+        r'SIREN\s*[N°n°]*\s*[:\s]+([\d\s]{9,14})',
+        r'RCS[^"]*"([\d\s]{9,14})"',
     ):
         m = re.search(pat, texte, re.IGNORECASE)
         if m:
-            return re.sub(r"\s+", "", m.group(1))[:9]
+            v = re.sub(r"\s+", "", m.group(1))
+            if re.match(r"^\d{9}$", v):
+                return v
+
     return "—"
 
 
-def get_full_text(annonce: dict) -> str:
-    """Tente tous les champs texte connus pour récupérer l'annonce complète."""
-    for field in ("publicationavis", "contenu", "texte", "avis", "corps", "description",
-                  "publicationavis_facette"):
-        v = annonce.get(field)
-        if v and len(str(v)) > 5:
-            return s(v)
-    # Si tous les champs sont courts, concatène tout ce qui est string long
-    parts = []
-    for val in annonce.values():
-        if isinstance(val, str) and len(val) > 20:
-            parts.append(val)
-        elif isinstance(val, list):
-            for item in val:
-                if isinstance(item, str) and len(item) > 20:
-                    parts.append(item)
-    return " ".join(parts)
-
-
 def get_activite(annonce: dict) -> str:
-    for field in ("activite", "activiteprincipale", "libelle_activite", "naf_lib"):
+    for field in ("activite", "activiteprincipale", "libelle_activite"):
         v = s(annonce.get(field)).strip()
+        if v and '{' not in v:
+            return v
+
+    personne = get_personne(annonce)
+    if personne:
+        v = str(personne.get("activite") or "").strip()
         if v:
             return v
-    # Dans objet imbriqué
-    for nested_key in ("commercant", "entreprise"):
-        nested = annonce.get(nested_key)
-        if isinstance(nested, dict):
-            for sub in ("activite", "activiteprincipale", "libelle"):
-                v = s(nested.get(sub, "")).strip()
-                if v:
-                    return v
+
+    # Regex
+    texte = get_full_text(annonce)
+    m = re.search(r'"activite"\s*:\s*"([^"]{5,150})"', texte)
+    return m.group(1).strip() if m else ""
+
+
+def get_forme_juridique(annonce: dict) -> str:
+    personne = get_personne(annonce)
+    if personne:
+        v = str(personne.get("formeJuridique") or "").strip()
+        if v:
+            return v
+    texte = get_full_text(annonce)
+    m = re.search(r'"formeJuridique"\s*:\s*"([^"]{3,80})"', texte)
+    return m.group(1).strip() if m else ""
+
+
+def get_adresse(annonce: dict) -> str:
+    personne = get_personne(annonce)
+    if personne:
+        adr = personne.get("adresseSiegeSoc") or personne.get("adresse") or {}
+        if isinstance(adr, dict):
+            parts = [
+                str(adr.get("numeroVoie") or ""),
+                str(adr.get("typeVoie") or ""),
+                str(adr.get("nomVoie") or ""),
+                str(adr.get("codePostal") or ""),
+                str(adr.get("ville") or ""),
+            ]
+            return " ".join(p for p in parts if p).strip()
+        if isinstance(adr, str):
+            return adr.strip()
     return ""
 
 
@@ -135,10 +202,20 @@ def get_ville(annonce: dict) -> str:
     v = s(annonce.get("ville")).strip().title()
     if v:
         return v
-    v = s(annonce.get("tribunal")).strip()
-    # "TJ de Lyon" → "Lyon"
-    m = re.search(r"\bde\s+([A-ZÀ-Ÿ][a-zà-ÿ\-]+)", v)
-    return m.group(1) if m else v or "—"
+    # Depuis tribunal
+    trib = s(annonce.get("tribunal")).strip()
+    m = re.search(r"\bde\s+([A-ZÀ-Ÿ][a-zà-ÿ\-]+)", trib)
+    if m:
+        return m.group(1)
+    # Depuis personne
+    personne = get_personne(annonce)
+    if personne:
+        immat = personne.get("numeroImmatriculation") or {}
+        if isinstance(immat, dict):
+            greffe = immat.get("nomGreffeImmat") or ""
+            if greffe:
+                return str(greffe).strip().title()
+    return "—"
 
 
 def get_tribunal(annonce: dict) -> str:
@@ -149,13 +226,27 @@ def get_tribunal(annonce: dict) -> str:
     return ""
 
 
+def get_full_text(annonce: dict) -> str:
+    """Récupère le texte brut le plus complet disponible."""
+    for field in ("publicationavis", "contenu", "texte", "avis", "description"):
+        v = annonce.get(field)
+        if v and len(str(v)) > 5:
+            return str(v)
+    # Concatène tous les champs string longs
+    parts = []
+    for val in annonce.values():
+        if isinstance(val, str) and len(val) > 20:
+            parts.append(val)
+    return " ".join(parts)
+
+
 # ── Secteurs & procédure ──────────────────────────────────────────────────────
 
 SECTEURS = [
     ("Défense & Aéronautique",    ["aéronaut", "défense", "armement", "naval", "spatia", "missile", "militair", "balistiq"]),
     ("Santé & Pharmaceutique",    ["pharmaceut", "médical", "biotech", "biotechnolog", "laboratoir", "clinique", "médecin"]),
     ("Industrie manufacturière",  ["usinage", "mécaniqu", "manufactur", "fonderie", "forge", "métallurg", "plastiqu", "composit", "sous-trait"]),
-    ("Tech & Numérique",          ["informatique", "logiciel", "numérique", "télécom", "cybersécur", "cloud", "software", "digital"]),
+    ("Tech & Numérique",          ["informatique", "logiciel", "numérique", "télécom", "cybersécur", "cloud", "software", "digital", "édition"]),
     ("BTP & Construction",        ["construction", "bâtiment", "travaux publics", "rénovation", "génie civil", "maçonnerie", "charpente", "plomberie", "électricité"]),
     ("Transport & Logistique",    ["transport", "logistique", "fret", "camion", "transitaire", "messagerie", "entrepôt", "déménagement"]),
     ("Commerce & Distribution",   ["commerce", "distribution", "négoce", "grossiste", "retail", "grande surface", "vente"]),
@@ -169,7 +260,7 @@ BITD_KEYWORDS = ["aéronaut", "défense", "armement", "naval", "spatia", "missil
 
 
 def detect_secteur(activite: str, texte: str) -> "tuple[str, bool]":
-    haystack = (activite + " " + texte[:500]).lower()
+    haystack = (activite + " " + texte[:800]).lower()
     for secteur, keywords in SECTEURS:
         if any(k in haystack for k in keywords):
             bitd = any(k in haystack for k in BITD_KEYWORDS)
@@ -178,11 +269,8 @@ def detect_secteur(activite: str, texte: str) -> "tuple[str, bool]":
 
 
 def detect_procedure(typeavis: str, texte: str) -> "tuple[str, str, int]":
-    # Cherche d'abord dans le texte complet (plus fiable que typeavis_lib)
     combined = (texte + " " + typeavis).lower()
-
-    # Ordre important : liquidation avant redressement pour éviter faux positifs
-    if "liquidation judiciaire" in combined and "plan" not in combined[:100]:
+    if "liquidation judiciaire" in combined:
         return "Liquidation judiciaire", "Haute", 2
     if "redressement judiciaire" in combined:
         return "Redressement judiciaire", "Haute", 3
@@ -190,13 +278,8 @@ def detect_procedure(typeavis: str, texte: str) -> "tuple[str, str, int]":
         return "Sauvegarde", "Moyenne", 1
     if "rétablissement professionnel" in combined:
         return "Rétablissement professionnel", "Basse", 0
-    if "procédure collective" in combined or "faillite" in combined:
-        return "Procédure collective", "Basse", 0
-    # Fallback sur le type BODACC
     return typeavis or "Procédure collective", "Basse", 0
 
-
-# ── Score & contacts ──────────────────────────────────────────────────────────
 
 def extract_contacts(texte: str) -> str:
     contacts = []
@@ -210,12 +293,14 @@ def extract_contacts(texte: str) -> str:
     for pat in patterns:
         for m in re.finditer(pat, texte, re.IGNORECASE):
             val = re.sub(r"\s+", " ", m.group(1)).strip(" :.,;")
-            key = re.sub(r"^[^A-ZÀ-Ÿ]+", "", val).lower()
+            key = re.sub(r"^[^A-ZÀ-Ÿ]+", "", val, flags=re.IGNORECASE).lower()
             if key not in seen and len(val) > 5:
                 seen.add(key)
                 contacts.append(val)
     return " ; ".join(contacts[:4])
 
+
+# ── Score & mise en forme ─────────────────────────────────────────────────────
 
 def score_dossier(annonce: dict) -> dict:
     texte = get_full_text(annonce)
@@ -236,9 +321,11 @@ def score_dossier(annonce: dict) -> dict:
     siren = get_siren(annonce)
     ville = get_ville(annonce)
     tribunal = get_tribunal(annonce)
+    forme = get_forme_juridique(annonce)
+    adresse = get_adresse(annonce)
+    date_par = s(annonce.get("dateparution") or annonce.get("dateParution"))
 
-    # Synthèse courte depuis le texte
-    synthese = build_synthese(annonce, activite, typeavis, tribunal, texte)
+    synthese = build_synthese(activite, forme, adresse, tribunal, date_par, texte)
 
     return {
         "nom": nom,
@@ -251,23 +338,32 @@ def score_dossier(annonce: dict) -> dict:
         "bitd": bitd,
         "marque": False,
         "ebitda": None,
+        "forme": forme,
+        "adresse": adresse,
+        "tribunal": tribunal,
+        "date": date_par,
         "synthese": synthese,
         "contacts": extract_contacts(texte),
     }
 
 
-def build_synthese(annonce, activite, typeavis, tribunal, texte) -> str:
-    date_par = s(annonce.get("dateparution") or annonce.get("dateParution"))
+def build_synthese(activite, forme, adresse, tribunal, date_par, texte) -> str:
     parts = []
     if activite:
         parts.append(f"Activité : {activite}.")
+    if forme:
+        parts.append(f"Forme juridique : {forme}.")
+    if adresse:
+        parts.append(f"Siège : {adresse}.")
     if tribunal:
         parts.append(f"Tribunal : {tribunal}.")
     if date_par:
         parts.append(f"Parution BODACC : {date_par}.")
-    excerpt = re.sub(r"\s+", " ", texte).strip()[:400]
-    if excerpt:
-        parts.append(excerpt + ("…" if len(texte) > 400 else ""))
+    # Extrait la partie textuelle AVANT le JSON (souvent descriptive)
+    pre_json = texte.split('{')[0].strip() if '{' in texte else texte
+    excerpt = re.sub(r"\s+", " ", pre_json).strip()[:300]
+    if excerpt and len(excerpt) > 10:
+        parts.append(excerpt + ("…" if len(pre_json) > 300 else ""))
     return " ".join(parts)
 
 
@@ -282,8 +378,7 @@ def fetch_annonces(since: str) -> list[dict]:
     try:
         r = requests.get(API, params=params, timeout=30)
         r.raise_for_status()
-        data = r.json()
-        return data.get("results", [])
+        return r.json().get("results", [])
     except Exception as e:
         print(f"[BODACC] Erreur fetch : {e}", file=sys.stderr)
         return []
@@ -309,9 +404,13 @@ def render_rapport(dossiers: list[dict], rapport_date: str) -> str:
         lines.append(f"- **Procédure** : {d['procedure']}")
         lines.append(f"- **Urgence** : {d['urgence']}")
         lines.append(f"- **Ville** : {d['ville']}")
+        if d.get("forme"):
+            lines.append(f"- **Forme juridique** : {d['forme']}")
+        if d.get("tribunal"):
+            lines.append(f"- **Tribunal** : {d['tribunal']}")
         lines.append(f"- **BITD** : {fmt_flag(d['bitd'])}")
         lines.append(f"- **Marque** : {fmt_flag(d['marque'])}")
-        if d["ebitda"]:
+        if d.get("ebitda"):
             lines.append(f"- **EBITDA** : {d['ebitda']}")
         lines.append("")
         if d["synthese"]:
@@ -338,7 +437,6 @@ def main():
         print("[BODACC] Aucune annonce — pas de rapport généré.")
         return
 
-    # Debug : affiche la structure du premier enregistrement
     debug_record(annonces[0])
 
     dossiers = [score_dossier(a) for a in annonces]

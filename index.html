@@ -53,24 +53,15 @@
     .header-left { display: flex; align-items: center; gap: 12px; }
 
     .logo {
-      width: 34px;
-      height: 34px;
+      width: 34px; height: 34px;
       background: rgba(255,255,255,.15);
       border-radius: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 800;
-      font-size: 15px;
-      letter-spacing: -0.5px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 15px;
       flex-shrink: 0;
     }
 
-    header h1 {
-      font-size: 16px;
-      font-weight: 600;
-      letter-spacing: .3px;
-    }
+    header h1 { font-size: 16px; font-weight: 600; letter-spacing: .3px; }
 
     #rapport-date {
       font-size: 11.5px;
@@ -85,80 +76,42 @@
       background: var(--surface);
       border-bottom: 1px solid var(--border);
       padding: 10px 24px;
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
     }
 
-    .filter-group {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
+    .filter-group { display: flex; align-items: center; gap: 6px; }
 
     .filter-group label {
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: .6px;
-      white-space: nowrap;
+      font-size: 11px; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .6px; white-space: nowrap;
     }
 
     select {
-      border: 1px solid var(--border);
-      border-radius: 5px;
-      padding: 5px 28px 5px 10px;
-      font-size: 12.5px;
+      border: 1px solid var(--border); border-radius: 5px;
+      padding: 5px 28px 5px 10px; font-size: 12.5px;
       background: white url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b6b6b'/%3E%3C/svg%3E") no-repeat calc(100% - 9px) center;
-      -webkit-appearance: none;
-      appearance: none;
-      color: var(--text);
-      cursor: pointer;
+      -webkit-appearance: none; appearance: none;
+      color: var(--text); cursor: pointer;
     }
-
     select:focus { outline: none; border-color: var(--accent); }
 
     #sort-score {
-      margin-left: 4px;
-      padding: 5px 12px;
-      border: 1px solid var(--border);
-      border-radius: 5px;
-      font-size: 12px;
-      background: white;
-      cursor: pointer;
-      color: var(--muted);
-      transition: all .15s;
+      margin-left: 4px; padding: 5px 12px;
+      border: 1px solid var(--border); border-radius: 5px;
+      font-size: 12px; background: white; cursor: pointer;
+      color: var(--muted); transition: all .15s;
     }
+    #sort-score.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); font-weight: 600; }
 
-    #sort-score.active {
-      background: var(--accent-dim);
-      border-color: var(--accent);
-      color: var(--accent);
-      font-weight: 600;
-    }
-
-    #toolbar-right {
-      margin-left: auto;
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-
-    #count {
-      font-size: 12px;
-      color: var(--muted);
-      white-space: nowrap;
-    }
+    #toolbar-right { margin-left: auto; display: flex; align-items: center; gap: 16px; }
+    #count { font-size: 12px; color: var(--muted); white-space: nowrap; }
 
     /* ── Grid ── */
     main {
       padding: 20px 24px;
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
-      gap: 14px;
-      align-items: start;
+      gap: 14px; align-items: start;
     }
 
     /* ── Card ── */
@@ -167,168 +120,128 @@
       border: 1px solid var(--border);
       border-radius: var(--r);
       padding: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      transition: box-shadow .15s;
+      display: flex; flex-direction: column; gap: 10px;
+      transition: box-shadow .15s, transform .1s;
+      cursor: pointer;
     }
+    .card:hover { box-shadow: 0 4px 20px rgba(0,0,0,.12); transform: translateY(-1px); }
 
-    .card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.09); }
-
-    .card-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 8px;
-    }
-
-    .card-name {
-      font-size: 14px;
-      font-weight: 700;
-      color: var(--text);
-      line-height: 1.3;
-    }
+    .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+    .card-name { font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.3; }
 
     .badge {
-      display: inline-flex;
-      align-items: center;
-      font-size: 11px;
-      font-weight: 700;
-      padding: 3px 9px;
-      border-radius: 20px;
-      white-space: nowrap;
-      flex-shrink: 0;
-      text-transform: uppercase;
-      letter-spacing: .4px;
+      display: inline-flex; align-items: center;
+      font-size: 11px; font-weight: 700;
+      padding: 3px 9px; border-radius: 20px;
+      white-space: nowrap; flex-shrink: 0;
+      text-transform: uppercase; letter-spacing: .4px;
     }
-
     .u-haute { background: var(--red-bg); color: var(--red); }
     .u-moyenne { background: var(--orange-bg); color: var(--orange); }
     .u-basse { background: var(--green-bg); color: var(--green); }
 
-    /* Tags row */
-    .tags {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 5px;
-    }
+    .tags { display: flex; flex-wrap: wrap; gap: 5px; }
+    .tag { background: var(--tag); border-radius: 4px; padding: 2px 8px; font-size: 11.5px; color: var(--muted); }
 
-    .tag {
-      background: var(--tag);
-      border-radius: 4px;
-      padding: 2px 8px;
-      font-size: 11.5px;
-      color: var(--muted);
-    }
-
-    /* Key fields grid */
-    .fields {
-      display: grid;
-      grid-template-columns: max-content 1fr;
-      gap: 3px 14px;
-      font-size: 12.5px;
-    }
-
+    .fields { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; font-size: 12.5px; }
     .fl { color: var(--muted); }
     .fv { font-weight: 500; }
+    .score-num { font-weight: 800; font-size: 14px; color: var(--accent); }
 
-    .score-num {
-      font-weight: 800;
-      font-size: 14px;
-      color: var(--accent);
-    }
-
-    /* Synthèse */
     .synthese {
-      font-size: 12.5px;
-      color: #444;
-      padding-top: 8px;
-      border-top: 1px solid var(--border);
+      font-size: 12.5px; color: #444;
+      padding-top: 8px; border-top: 1px solid var(--border);
       line-height: 1.6;
-    }
-
-    /* Flags */
-    .flags {
-      display: flex;
-      gap: 5px;
-      flex-wrap: wrap;
-    }
-
-    .flag {
-      font-size: 11px;
-      font-weight: 600;
-      padding: 2px 8px;
-      border-radius: 4px;
-      letter-spacing: .3px;
-    }
-
-    .flag-on { background: #dff0e3; color: #176135; }
-    .flag-off { background: var(--tag); color: #aaa; text-decoration: line-through; }
-
-    /* Contacts */
-    .contacts {
-      font-size: 12px;
-      color: var(--muted);
-      padding-top: 8px;
-      border-top: 1px solid var(--border);
-      display: flex;
-      gap: 6px;
-      align-items: flex-start;
-    }
-
-    .contacts-icon { flex-shrink: 0; margin-top: 1px; }
-
-    /* Score bar */
-    .score-bar-wrap {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .score-bar {
-      flex: 1;
-      height: 5px;
-      background: var(--tag);
-      border-radius: 3px;
+      display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
       overflow: hidden;
     }
 
-    .score-fill {
-      height: 100%;
-      background: var(--accent);
-      border-radius: 3px;
-      transition: width .4s;
+    .flags { display: flex; gap: 5px; flex-wrap: wrap; }
+    .flag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; letter-spacing: .3px; }
+    .flag-on { background: #dff0e3; color: #176135; }
+    .flag-off { background: var(--tag); color: #aaa; text-decoration: line-through; }
+
+    .contacts {
+      font-size: 12px; color: var(--muted);
+      padding-top: 8px; border-top: 1px solid var(--border);
+      display: flex; gap: 6px; align-items: flex-start;
     }
+
+    .score-bar-wrap { display: flex; align-items: center; gap: 6px; }
+    .score-bar { flex: 1; height: 5px; background: var(--tag); border-radius: 3px; overflow: hidden; }
+    .score-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width .4s; }
 
     /* ── State screens ── */
-    .state-screen {
-      grid-column: 1 / -1;
-      text-align: center;
-      padding: 80px 24px;
-      color: var(--muted);
-    }
-
-    .state-screen .icon {
-      font-size: 40px;
-      margin-bottom: 14px;
-      opacity: .5;
-    }
-
+    .state-screen { grid-column: 1 / -1; text-align: center; padding: 80px 24px; color: var(--muted); }
     .state-screen p { font-size: 14px; margin-top: 6px; }
     .state-screen small { font-size: 12px; opacity: .75; }
-
     .spinner {
-      display: inline-block;
-      width: 28px;
-      height: 28px;
-      border: 3px solid var(--border);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: spin .75s linear infinite;
-      margin-bottom: 14px;
+      display: inline-block; width: 28px; height: 28px;
+      border: 3px solid var(--border); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin .75s linear infinite; margin-bottom: 14px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Modal ── */
+    #modal-overlay {
+      display: none;
+      position: fixed; inset: 0; z-index: 1000;
+      background: rgba(10,20,40,.55);
+      backdrop-filter: blur(3px);
+      align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    #modal-overlay.open { display: flex; }
+
+    #modal {
+      background: var(--surface);
+      border-radius: 12px;
+      width: 100%; max-width: 680px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 24px 64px rgba(0,0,0,.3);
+      animation: slideUp .2s ease;
+    }
+    @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+    .modal-header {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      padding: 20px 24px 16px;
+      border-bottom: 1px solid var(--border);
+      gap: 12px;
+      position: sticky; top: 0; background: var(--surface);
+      border-radius: 12px 12px 0 0;
     }
 
-    @keyframes spin { to { transform: rotate(360deg); } }
+    .modal-title { font-size: 17px; font-weight: 700; line-height: 1.3; }
+
+    #modal-close {
+      background: none; border: none; cursor: pointer;
+      font-size: 20px; color: var(--muted); padding: 2px 6px;
+      border-radius: 4px; flex-shrink: 0;
+      transition: background .1s;
+    }
+    #modal-close:hover { background: var(--tag); }
+
+    .modal-body { padding: 20px 24px; display: flex; flex-direction: column; gap: 18px; }
+
+    .modal-badges { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    .modal-section { display: flex; flex-direction: column; gap: 6px; }
+    .modal-section-title {
+      font-size: 10px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .8px;
+      padding-bottom: 4px; border-bottom: 1px solid var(--border);
+    }
+
+    .modal-grid { display: grid; grid-template-columns: 140px 1fr; gap: 5px 16px; font-size: 13px; }
+    .modal-label { color: var(--muted); }
+    .modal-value { font-weight: 500; }
+
+    .modal-text { font-size: 13px; color: #444; line-height: 1.7; }
+
+    .modal-flags { display: flex; gap: 6px; flex-wrap: wrap; }
+    .modal-contacts { font-size: 13px; color: var(--muted); }
 
     /* ── Responsive ── */
     @media (max-width: 600px) {
@@ -337,6 +250,8 @@
       #toolbar { padding: 8px 16px; gap: 8px; }
       main { padding: 12px 16px; grid-template-columns: 1fr; }
       #sort-score { display: none; }
+      #modal { max-width: 100%; border-radius: 12px 12px 0 0; }
+      #modal-overlay { align-items: flex-end; padding: 0; }
     }
   </style>
 </head>
@@ -369,9 +284,7 @@
     <select id="f-procedure"><option value="">Toutes</option></select>
   </div>
   <button id="sort-score">Score ↓</button>
-  <div id="toolbar-right">
-    <span id="count"></span>
-  </div>
+  <div id="toolbar-right"><span id="count"></span></div>
 </div>
 
 <main id="grid">
@@ -380,6 +293,17 @@
     <p>Récupération du dernier rapport…</p>
   </div>
 </main>
+
+<!-- Modal fiche complète -->
+<div id="modal-overlay" role="dialog" aria-modal="true">
+  <div id="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title"></div>
+      <button id="modal-close" aria-label="Fermer">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
 
 <script>
 (function () {
@@ -401,7 +325,7 @@
     const rapports = files
       .filter(f => /^rapport_\d{8}\.md$/.test(f.name))
       .sort((a, b) => b.name.localeCompare(a.name));
-    if (!rapports.length) throw new Error('Aucun fichier rapport_YYYYMMDD.md trouvé à la racine du dépôt.');
+    if (!rapports.length) throw new Error('Aucun fichier rapport_YYYYMMDD.md trouvé dans le dépôt.');
     return rapports[0].name;
   }
 
@@ -415,7 +339,6 @@
 
   function parseRapport(md) {
     const dossiers = [];
-    // Split on horizontal rules (--- or ***)
     const blocks = md.split(/\n[ \t]*[-*]{3,}[ \t]*\n/);
 
     for (const block of blocks) {
@@ -424,7 +347,6 @@
 
       const d = { name: nameMatch[1].trim() };
 
-      // Bullet fields: - **Label** : Value
       const bulletRe = /^[-*]\s+\*\*([^*]+)\*\*\s*:?\s*(.+)/gm;
       let m;
       while ((m = bulletRe.exec(block)) !== null) {
@@ -439,19 +361,20 @@
         else if (key === 'bitd') d.bitd = /oui|✓|yes|true|1/i.test(val);
         else if (key === 'marque') d.marque = /oui|✓|yes|true|1/i.test(val);
         else if (key === 'ebitda') d.ebitda = val;
+        else if (/forme/.test(key)) d.forme = val;
+        else if (/tribunal/.test(key)) d.tribunal = val;
+        else if (/date/.test(key)) d.date = val;
+        else if (/adresse|siege/.test(key)) d.adresse = val;
       }
 
-      // Multi-line sections: **Label** :\ntext
       d.synthese = extractSection(block, 'Synth[eè]se');
       d.contacts = extractSection(block, 'Contacts?');
 
-      // Numeric score for sorting
       const sm = (d.score || '').match(/(\d+(?:[.,]\d+)?)/);
       d.scoreNum = sm ? parseFloat(sm[1].replace(',', '.')) : 0;
 
       dossiers.push(d);
     }
-
     return dossiers;
   }
 
@@ -461,7 +384,7 @@
     return m ? m[1].trim() : null;
   }
 
-  /* ── Filters & sort ── */
+  /* ── Filters ── */
 
   function applyFilters() {
     const secteur = document.getElementById('f-secteur').value;
@@ -476,27 +399,30 @@
     });
 
     if (sortByScore) list = list.slice().sort((a, b) => b.scoreNum - a.scoreNum);
-
     return list;
   }
 
-  /* ── Render ── */
+  /* ── Render cards ── */
 
   function render() {
     const list = applyFilters();
     const grid = document.getElementById('grid');
-    document.getElementById('count').textContent =
-      `${list.length} dossier${list.length !== 1 ? 's' : ''}`;
+    document.getElementById('count').textContent = `${list.length} dossier${list.length !== 1 ? 's' : ''}`;
 
     if (!list.length) {
-      grid.innerHTML = `<div class="state-screen">
-        <div class="icon">🔍</div>
-        <p>Aucun dossier ne correspond aux filtres sélectionnés.</p>
-      </div>`;
+      grid.innerHTML = `<div class="state-screen"><p>Aucun dossier ne correspond aux filtres.</p></div>`;
       return;
     }
 
-    grid.innerHTML = list.map(cardHTML).join('');
+    grid.innerHTML = list.map((d, i) => cardHTML(d, i)).join('');
+
+    // Attach click listeners
+    grid.querySelectorAll('.card').forEach(card => {
+      card.addEventListener('click', () => {
+        const idx = parseInt(card.dataset.idx, 10);
+        openModal(list[idx]);
+      });
+    });
   }
 
   function urgClass(u) {
@@ -506,89 +432,137 @@
     return 'u-basse';
   }
 
-  function scoreWidth(n) {
-    const d = n || 0;
-    return Math.min(100, (d / 10) * 100) + '%';
-  }
-
   function flag(label, on) {
     return `<span class="flag ${on ? 'flag-on' : 'flag-off'}">${e(label)}</span>`;
   }
 
-  function cardHTML(d) {
-    const hasFlags = d.bitd !== undefined || d.marque !== undefined || d.ebitda;
-    return `<article class="card">
+  function cardHTML(d, idx) {
+    return `<article class="card" data-idx="${idx}" tabindex="0" role="button" aria-label="Ouvrir ${e(d.name)}">
       <div class="card-top">
         <div class="card-name">${e(d.name)}</div>
         ${d.urgence ? `<span class="badge ${urgClass(d.urgence)}">${e(d.urgence)}</span>` : ''}
       </div>
 
-      ${(d.ville || d.secteur || d.procedure) ? `<div class="tags">
+      <div class="tags">
         ${d.ville ? `<span class="tag">📍 ${e(d.ville)}</span>` : ''}
         ${d.secteur ? `<span class="tag">${e(d.secteur)}</span>` : ''}
         ${d.procedure ? `<span class="tag">${e(d.procedure)}</span>` : ''}
-      </div>` : ''}
+      </div>
 
       <div class="fields">
-        ${d.siren ? `<span class="fl">SIREN</span><span class="fv">${e(d.siren)}</span>` : ''}
-        ${d.score !== undefined ? `<span class="fl">Score</span>
+        ${d.siren && d.siren !== '—' ? `<span class="fl">SIREN</span><span class="fv">${e(d.siren)}</span>` : ''}
+        <span class="fl">Score</span>
         <span class="fv">
           <div class="score-bar-wrap">
-            <span class="score-num">${e(d.score)}</span>
-            <div class="score-bar"><div class="score-fill" style="width:${scoreWidth(d.scoreNum)}"></div></div>
+            <span class="score-num">${e(d.score || '—')}</span>
+            <div class="score-bar"><div class="score-fill" style="width:${Math.min(100, d.scoreNum * 10)}%"></div></div>
           </div>
-        </span>` : ''}
+        </span>
       </div>
 
       ${d.synthese ? `<div class="synthese">${e(d.synthese)}</div>` : ''}
 
-      ${hasFlags ? `<div class="flags">
-        ${d.bitd !== undefined ? flag('BITD', d.bitd) : ''}
-        ${d.marque !== undefined ? flag('Marque', d.marque) : ''}
+      <div class="flags">
+        ${flag('BITD', d.bitd)}
+        ${flag('Marque', d.marque)}
         ${d.ebitda ? `<span class="flag flag-on">EBITDA ${e(d.ebitda)}</span>` : ''}
-      </div>` : ''}
+      </div>
 
-      ${d.contacts ? `<div class="contacts">
-        <span class="contacts-icon">📞</span>
-        <span>${e(d.contacts)}</span>
-      </div>` : ''}
+      ${d.contacts ? `<div class="contacts"><span>📞</span><span>${e(d.contacts)}</span></div>` : ''}
     </article>`;
   }
 
-  function e(s) {
-    return String(s ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+  /* ── Modal ── */
+
+  function openModal(d) {
+    document.getElementById('modal-title').textContent = d.name;
+
+    const body = document.getElementById('modal-body');
+    body.innerHTML = `
+      <div class="modal-badges">
+        ${d.urgence ? `<span class="badge ${urgClass(d.urgence)}">${e(d.urgence)}</span>` : ''}
+        ${d.procedure ? `<span class="tag">${e(d.procedure)}</span>` : ''}
+        ${d.secteur ? `<span class="tag">${e(d.secteur)}</span>` : ''}
+      </div>
+
+      <div class="modal-section">
+        <div class="modal-section-title">Identification</div>
+        <div class="modal-grid">
+          ${row('SIREN', d.siren)}
+          ${row('Score', d.score)}
+          ${row('Ville', d.ville)}
+          ${d.forme ? row('Forme juridique', d.forme) : ''}
+          ${d.tribunal ? row('Tribunal', d.tribunal) : ''}
+          ${d.adresse ? row('Siège', d.adresse) : ''}
+          ${d.date ? row('Parution BODACC', d.date) : ''}
+        </div>
+      </div>
+
+      ${d.synthese ? `
+      <div class="modal-section">
+        <div class="modal-section-title">Synthèse</div>
+        <div class="modal-text">${e(d.synthese)}</div>
+      </div>` : ''}
+
+      <div class="modal-section">
+        <div class="modal-section-title">Flags</div>
+        <div class="modal-flags">
+          <span class="flag ${d.bitd ? 'flag-on' : 'flag-off'}">BITD</span>
+          <span class="flag ${d.marque ? 'flag-on' : 'flag-off'}">Marque</span>
+          ${d.ebitda ? `<span class="flag flag-on">EBITDA ${e(d.ebitda)}</span>` : ''}
+        </div>
+      </div>
+
+      ${d.contacts ? `
+      <div class="modal-section">
+        <div class="modal-section-title">Contacts</div>
+        <div class="modal-contacts">📞 ${e(d.contacts)}</div>
+      </div>` : ''}
+    `;
+
+    document.getElementById('modal-overlay').classList.add('open');
+    document.body.style.overflow = 'hidden';
   }
 
-  /* ── Populate filter dropdowns ── */
+  function row(label, val) {
+    if (!val || val === '—') return '';
+    return `<span class="modal-label">${e(label)}</span><span class="modal-value">${e(val)}</span>`;
+  }
+
+  function closeModal() {
+    document.getElementById('modal-overlay').classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  document.getElementById('modal-close').addEventListener('click', closeModal);
+  document.getElementById('modal-overlay').addEventListener('click', ev => {
+    if (ev.target === document.getElementById('modal-overlay')) closeModal();
+  });
+  document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closeModal(); });
+
+  /* ── Populate filters ── */
 
   function populateFilters(dossiers) {
     const secteurs = [...new Set(dossiers.map(d => d.secteur).filter(Boolean))].sort();
     const procs = [...new Set(dossiers.map(d => d.procedure).filter(Boolean))].sort();
-
     const addOptions = (id, values) => {
       const sel = document.getElementById(id);
       values.forEach(v => {
         const o = document.createElement('option');
-        o.value = v;
-        o.textContent = v;
-        sel.appendChild(o);
+        o.value = v; o.textContent = v; sel.appendChild(o);
       });
     };
-
     addOptions('f-secteur', secteurs);
     addOptions('f-procedure', procs);
   }
 
-  /* ── Format date ── */
-
   function formatDate(filename) {
     const m = filename.match(/rapport_(\d{4})(\d{2})(\d{2})\.md/);
-    if (!m) return filename;
-    return `Rapport du ${m[3]}/${m[2]}/${m[1]}`;
+    return m ? `Rapport du ${m[3]}/${m[2]}/${m[1]}` : filename;
+  }
+
+  function e(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
   /* ── Boot ── */
@@ -597,32 +571,25 @@
     try {
       const filename = await findLatestRapport();
       document.getElementById('rapport-date').textContent = formatDate(filename);
-
       const md = await fetchRaw(filename);
       allDossiers = parseRapport(md);
-
-      if (!allDossiers.length) throw new Error('Aucun dossier trouvé dans le rapport. Vérifiez le format Markdown.');
-
+      if (!allDossiers.length) throw new Error('Aucun dossier trouvé dans le rapport.');
       populateFilters(allDossiers);
-
       document.getElementById('f-secteur').addEventListener('change', render);
       document.getElementById('f-urgence').addEventListener('change', render);
       document.getElementById('f-procedure').addEventListener('change', render);
-
       const sortBtn = document.getElementById('sort-score');
       sortBtn.addEventListener('click', () => {
         sortByScore = !sortByScore;
         sortBtn.classList.toggle('active', sortByScore);
         render();
       });
-
       render();
     } catch (err) {
       document.getElementById('rapport-date').textContent = 'Erreur';
       document.getElementById('grid').innerHTML = `<div class="state-screen">
-        <div class="icon">⚠️</div>
-        <p style="color:#b92b2b">${e(err.message)}</p>
-        <small>Vérifiez que le dépôt est public et qu'il contient un fichier rapport_YYYYMMDD.md</small>
+        <p style="color:#b92b2b">⚠️ ${e(err.message)}</p>
+        <small>Vérifiez que le dépôt est public et contient un fichier rapport_YYYYMMDD.md</small>
       </div>`;
     }
   }
