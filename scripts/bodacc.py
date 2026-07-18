@@ -5,11 +5,16 @@ Critères affinés 18 juillet 2026
 
 Sources d'enrichissement :
 1. BODACC (annonces-commerciales) — procédure du jour
-2. Pappers API — financials 3 ans (CA, EBE, résultat), dirigeants, capital
-3. Recherche Entreprises (data.gouv.fr) — catégorie PME/ETI/GE, effectif officiel, statut
-4. Historique BODACC du SIREN — procédures passées (contexte investissement)
+2. Recherche Entreprises (data.gouv.fr) — catégorie PME/ETI/GE, effectif INSEE, dirigeants RNE, statut
+3. Historique BODACC du SIREN — procédures passées (contexte investissement)
+4. Pappers API (optionnel, PAPPERS_TOKEN) — CA, résultat net, EBITDA sur 3 exercices
+5. Claude API (optionnel, ANTHROPIC_API_KEY) — analyse IA : situation, angle MASARE, actifs, red flags
 
-Logique issues GitHub : 1 issue max par SIREN (upsert)
+Filtre taille via catégorie entreprise :
+  - GE  (Grande Entreprise)             → passe (CA >> 20M€)
+  - ETI (Entreprise de Taille Interm.)  → passe (CA 50M€–1,5Md€ par définition)
+  - PME (Petite et Moyenne Entreprise)  → flaggé "taille à vérifier"
+  - N/D                                 → laissé passer (indéterminé)
 """
 
 import os
@@ -22,24 +27,23 @@ from datetime import datetime, timedelta
 # CONFIG
 # ---------------------------------------------------------------------------
 
-GITHUB_TOKEN  = os.environ.get("GITHUB_TOKEN", "")
-GITHUB_REPO   = os.environ.get("GITHUB_REPO", "matsaunder/Masare-veille")
-PAPPERS_TOKEN = os.environ.get("PAPPERS_TOKEN", "")
+GITHUB_TOKEN    = os.environ.get("GITHUB_TOKEN", "")
+GITHUB_REPO     = os.environ.get("GITHUB_REPO", "matsaunder/Masare-veille")
+PAPPERS_TOKEN   = os.environ.get("PAPPERS_TOKEN", "")
+ANTHROPIC_KEY   = os.environ.get("ANTHROPIC_API_KEY", "")
 
 GITHUB_HEADERS = {
     "Authorization": f"Bearer {GITHUB_TOKEN}",
     "Accept": "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
 }
-GITHUB_BASE = f"https://api.github.com/repos/{GITHUB_REPO}"
+GITHUB_BASE  = f"https://api.github.com/repos/{GITHUB_REPO}"
+BODACC_API   = "https://bodacc-datadila.opendatasoft.com/api/explore/v2.1/catalog/datasets/annonces-commerciales/records"
+API_GOUV_URL = "https://recherche-entreprises.api.gouv.fr/search"
+PAPPERS_URL  = "https://api.pappers.fr/v2/entreprise"
 
-BODACC_API        = "https://bodacc-datadila.opendatasoft.com/api/explore/v2.1/catalog/datasets/annonces-commerciales/records"
-PAPPERS_API       = "https://api.pappers.fr/v2/entreprise"
-API_GOUV_URL      = "https://recherche-entreprises.api.gouv.fr/search"
-
-SCORE_MIN    = 8
-CA_MIN_EUR   = 20_000_000
-JOURS_RECUL  = 2
+SCORE_MIN   = 8
+JOURS_RECUL = 2
 
 # ---------------------------------------------------------------------------
 # SECTEURS CIBLES
@@ -139,8 +143,16 @@ PROCEDURES = {
     "sauvegarde":              -2,
 }
 
+TRANCHE_EFFECTIF = {
+    "NN": "Non employeuse", "00": "0 salarié", "01": "1–2 sal.", "02": "3–5 sal.",
+    "03": "6–9 sal.", "11": "10–19 sal.", "12": "20–49 sal.", "21": "50–99 sal.",
+    "22": "100–199 sal.", "31": "200–249 sal.", "32": "250–499 sal.",
+    "41": "500–999 sal.", "42": "1 000–1 999 sal.", "51": "2 000–4 999 sal.",
+    "52": "5 000–9 999 sal.", "53": "10 000 sal. et plus",
+}
+
 # ---------------------------------------------------------------------------
-# UTILITAIRES
+# UTILITAIRES BODACC
 # ---------------------------------------------------------------------------
 
 def normalise(texte: str) -> str:
@@ -253,139 +265,26 @@ def est_personne_physique(record: dict) -> bool:
     return False
 
 
-def fmt_eur(valeur) -> str:
-    if valeur is None:
+def format_montant(val) -> str:
+    """Formate un montant en euros vers M€ avec signe."""
+    if val is None:
         return "N/D"
     try:
-        v = int(valeur)
-        if abs(v) >= 1_000_000:
-            return f"{v / 1_000_000:.1f} M€"
-        elif abs(v) >= 1_000:
-            return f"{v / 1_000:.0f} k€"
-        return f"{v} €"
+        m = float(val) / 1_000_000
+        if m < 0:
+            return f"-{abs(m):.1f} M€"
+        return f"{m:.1f} M€"
     except (ValueError, TypeError):
-        return str(valeur)
+        return str(val)
 
 
 # ---------------------------------------------------------------------------
-# SOURCE 1 — PAPPERS : données financières + filtre taille/rentabilité
+# SOURCE 1 — API RECHERCHE ENTREPRISES (data.gouv.fr) — gratuit, sans clé
 # ---------------------------------------------------------------------------
-
-def enrichir_depuis_pappers(siren: str) -> dict:
-    """
-    Enrichit depuis Pappers.
-    Filtre : CA ≥ 20M€  OU  résultat net positif sur au moins 1 des 3 derniers exercices.
-    Retourne dict avec ca_filtre_ok + toutes les données financières.
-    """
-    if not PAPPERS_TOKEN or siren == "N/A":
-        return {"ca_filtre_ok": True, "source": "pappers_absent"}
-
-    try:
-        resp = requests.get(
-            PAPPERS_API,
-            params={
-                "api_token": PAPPERS_TOKEN,
-                "siren": siren,
-                "extrait_kbis": "false",
-                "dirigeants": "true",
-                "beneficiaires_effectifs": "false",
-                "finances": "true",
-            },
-            timeout=10,
-        )
-        if not resp.ok:
-            print(f"  [Pappers] Erreur {resp.status_code} pour SIREN {siren}")
-            return {"ca_filtre_ok": True, "source": "pappers_erreur"}
-
-        data = resp.json()
-
-        # --- Filtre taille + rentabilité historique ---
-        ca_recent = data.get("chiffre_affaires")
-        comptes_raw = data.get("comptes_sociaux_saisis", [])
-        if not isinstance(comptes_raw, list):
-            comptes_raw = []
-        comptes_tri = sorted(comptes_raw, key=lambda x: x.get("annee", 0), reverse=True)[:3]
-
-        ca_ok = False
-        if ca_recent is not None:
-            try:
-                ca_ok = float(ca_recent) >= CA_MIN_EUR
-            except (ValueError, TypeError):
-                pass
-
-        rentable_ok = any(
-            (c.get("resultat_net") or c.get("resultat") or 0) > 0
-            for c in comptes_tri
-        )
-
-        ca_filtre_ok = ca_ok or rentable_ok
-
-        if not ca_filtre_ok:
-            raison = f"CA {fmt_eur(ca_recent)} < 20 M€ et aucun exercice bénéficiaire sur 3 ans"
-            print(f"  [Pappers] SIREN {siren} écarté — {raison}")
-            return {"ca_filtre_ok": False, "ca_recent": ca_recent, "raison": raison}
-
-        # --- Dirigeant principal ---
-        dirigeants = data.get("dirigeants", [])
-        dirigeant = ""
-        if dirigeants:
-            d = dirigeants[0]
-            prenom  = d.get("prenom", "")
-            nom     = d.get("nom", d.get("denomination", ""))
-            qualite = d.get("qualite", "")
-            dirigeant = f"{prenom} {nom}".strip()
-            if qualite:
-                dirigeant += f" ({qualite})"
-
-        return {
-            "ca_filtre_ok": True,
-            "ca_recent":    ca_recent,
-            "effectif":     data.get("effectif", "N/D"),
-            "capital":      data.get("capital"),
-            "naf":          f"{data.get('code_naf', '')} — {data.get('libelle_code_naf', '')}".strip(" —") or "N/D",
-            "date_creation": data.get("date_creation", "N/D"),
-            "dirigeant":    dirigeant or "N/D",
-            "comptes":      comptes_tri,
-            "source":       "pappers_ok",
-        }
-
-    except Exception as e:
-        print(f"  [Pappers] Exception pour SIREN {siren} : {e}")
-        return {"ca_filtre_ok": True, "source": "pappers_exception"}
-
-
-# ---------------------------------------------------------------------------
-# SOURCE 2 — API RECHERCHE ENTREPRISES (data.gouv.fr) : catégorie + statut
-# ---------------------------------------------------------------------------
-
-TRANCHE_EFFECTIF = {
-    "NN": "Non employeuse",
-    "00": "0 salarié",
-    "01": "1 à 2 salariés",
-    "02": "3 à 5 salariés",
-    "03": "6 à 9 salariés",
-    "11": "10 à 19 salariés",
-    "12": "20 à 49 salariés",
-    "21": "50 à 99 salariés",
-    "22": "100 à 199 salariés",
-    "31": "200 à 249 salariés",
-    "32": "250 à 499 salariés",
-    "41": "500 à 999 salariés",
-    "42": "1 000 à 1 999 salariés",
-    "51": "2 000 à 4 999 salariés",
-    "52": "5 000 à 9 999 salariés",
-    "53": "10 000 salariés et plus",
-}
-
 
 def enrichir_depuis_api_gouv(siren: str) -> dict:
-    """
-    Appelle l'API Recherche Entreprises (data.gouv.fr) — gratuit, sans clé API.
-    Retourne : categorie (PME/ETI/GE), effectif officiel, statut, dirigeants officiels.
-    """
     if siren == "N/A":
         return {}
-
     try:
         resp = requests.get(
             API_GOUV_URL,
@@ -394,22 +293,23 @@ def enrichir_depuis_api_gouv(siren: str) -> dict:
         )
         if not resp.ok:
             return {}
-
         results = resp.json().get("results", [])
         if not results:
             return {}
-
         e = results[0]
-        tranche_code = e.get("tranche_effectif_salarie", "")
-        effectif_label = TRANCHE_EFFECTIF.get(tranche_code, tranche_code or "N/D")
-        categorie = e.get("categorie_entreprise", "N/D")  # PME / ETI / GE
-        statut = "Active" if e.get("etat_administratif") == "A" else "Cessée/Inconnue"
 
-        # Dirigeants officiels (RNE)
+        tranche_code   = e.get("tranche_effectif_salarie", "")
+        effectif_label = TRANCHE_EFFECTIF.get(tranche_code, tranche_code or "N/D")
+        categorie      = e.get("categorie_entreprise", "N/D")
+        statut         = "Active" if e.get("etat_administratif") == "A" else "Cessée/Inconnue"
+        annee_eff      = str(e.get("annee_effectif_salarie", ""))
+        naf_code       = e.get("activite_principale", "")
+        date_creation  = e.get("date_creation", "N/D")
+
         dirigeants_rne = []
         for d in e.get("dirigeants", [])[:3]:
-            nom    = d.get("nom", d.get("denomination", ""))
-            prenom = d.get("prenom", "")
+            nom     = d.get("nom", d.get("denomination", ""))
+            prenom  = d.get("prenom", "")
             qualite = d.get("qualite", "")
             libelle = f"{prenom} {nom}".strip()
             if qualite:
@@ -417,31 +317,32 @@ def enrichir_depuis_api_gouv(siren: str) -> dict:
             if libelle:
                 dirigeants_rne.append(libelle)
 
-        return {
-            "categorie":       categorie,
-            "effectif_officiel": effectif_label,
-            "statut":          statut,
-            "dirigeants_rne":  dirigeants_rne,
-            "annee_effectif":  str(e.get("annee_effectif_salarie", "")),
-        }
+        taille_ok   = categorie in ("ETI", "GE") or categorie == "N/D"
+        taille_flag = categorie
 
-    except Exception as e:
-        print(f"  [API Gouv] Exception pour SIREN {siren} : {e}")
+        return {
+            "categorie":         categorie,
+            "taille_ok":         taille_ok,
+            "taille_flag":       taille_flag,
+            "effectif_officiel": effectif_label,
+            "annee_effectif":    annee_eff,
+            "statut":            statut,
+            "naf_code":          naf_code,
+            "date_creation":     date_creation,
+            "dirigeants_rne":    dirigeants_rne,
+        }
+    except Exception as ex:
+        print(f"  [API Gouv] Exception pour SIREN {siren} : {ex}")
         return {}
 
 
 # ---------------------------------------------------------------------------
-# SOURCE 3 — HISTORIQUE BODACC DU SIREN : procédures passées
+# SOURCE 2 — HISTORIQUE BODACC DU SIREN — gratuit
 # ---------------------------------------------------------------------------
 
 def historique_bodacc(siren: str) -> list:
-    """
-    Récupère les 8 dernières annonces BODACC pour ce SIREN.
-    Retourne une liste de dict {date, procedure} pour l'affichage dans l'issue.
-    """
     if siren == "N/A":
         return []
-
     try:
         resp = requests.get(
             BODACC_API,
@@ -454,26 +355,166 @@ def historique_bodacc(siren: str) -> list:
         )
         if not resp.ok:
             return []
-
         results = resp.json().get("results", [])
         historique = []
         for r in results:
             date_p = r.get("dateparution", "N/D")
-            proc = extraire_procedure(r)
-            famille = r.get("familleavis_lib", "")
-            type_avis = r.get("typeavis_lib", "")
-            label = proc or type_avis or famille or "Annonce"
+            proc   = extraire_procedure(r)
+            label  = proc or r.get("typeavis_lib", "") or r.get("familleavis_lib", "") or "Annonce"
             historique.append({"date": date_p, "procedure": label})
-
         return historique
-
-    except Exception as e:
-        print(f"  [Historique BODACC] Exception pour SIREN {siren} : {e}")
+    except Exception as ex:
+        print(f"  [Historique BODACC] Exception pour SIREN {siren} : {ex}")
         return []
 
 
 # ---------------------------------------------------------------------------
-# DÉTECTION SECTEUR ET SCORING
+# SOURCE 3 — PAPPERS API (optionnel — activé si PAPPERS_TOKEN défini)
+# ---------------------------------------------------------------------------
+
+def enrichir_depuis_pappers(siren: str) -> dict:
+    """
+    Retourne les données financières Pappers (CA, résultat, EBITDA sur 3 ans).
+    Désactivé silencieusement si PAPPERS_TOKEN absent ou invalide.
+    """
+    if not PAPPERS_TOKEN or siren == "N/A":
+        return {}
+    try:
+        resp = requests.get(
+            PAPPERS_URL,
+            params={
+                "api_token":       PAPPERS_TOKEN,
+                "siren":           siren,
+                "finances":        "true",
+                "representants":   "false",
+                "publications":    "false",
+                "beneficiaires":   "false",
+                "extrait_kbis":    "false",
+            },
+            timeout=10,
+        )
+        if resp.status_code == 401:
+            print(f"  [Pappers] Token invalide ou crédits insuffisants — enrichissement financier ignoré")
+            return {}
+        if not resp.ok:
+            print(f"  [Pappers] Erreur {resp.status_code} pour SIREN {siren}")
+            return {}
+
+        data     = resp.json()
+        finances = data.get("finances", [])
+        if not finances:
+            return {}
+
+        exercices = []
+        for f in finances[:3]:
+            annee   = f.get("annee", "")
+            ca      = f.get("chiffre_affaires")
+            resultat = f.get("resultat")
+            ebitda  = f.get("excedent_brut_exploitation")
+            exercices.append({
+                "annee":    annee,
+                "ca":       ca,
+                "resultat": resultat,
+                "ebitda":   ebitda,
+            })
+
+        dernier = exercices[0] if exercices else {}
+        return {
+            "ca_dernier":       dernier.get("ca"),
+            "resultat_dernier": dernier.get("resultat"),
+            "ebitda_dernier":   dernier.get("ebitda"),
+            "annee_dernier":    dernier.get("annee"),
+            "exercices":        exercices,
+        }
+    except Exception as ex:
+        print(f"  [Pappers] Exception pour SIREN {siren} : {ex}")
+        return {}
+
+
+# ---------------------------------------------------------------------------
+# SOURCE 4 — CLAUDE API (optionnel — activé si ANTHROPIC_API_KEY défini)
+# ---------------------------------------------------------------------------
+
+def enrichir_avec_ia(dossier: dict, api_gouv: dict, pappers: dict, historique: list) -> str:
+    """
+    Génère une analyse investissement (situation, angle MASARE, actifs, red flags)
+    via l'API Claude. Désactivé silencieusement si ANTHROPIC_API_KEY absent.
+    """
+    if not ANTHROPIC_KEY:
+        return ""
+    try:
+        import anthropic
+
+        ca_str       = format_montant(pappers.get("ca_dernier")) if pappers else "N/D"
+        resultat_str = format_montant(pappers.get("resultat_dernier")) if pappers else "N/D"
+        ebitda_str   = format_montant(pappers.get("ebitda_dernier")) if pappers else "N/D"
+        annee_fin    = pappers.get("annee_dernier", "") if pappers else ""
+
+        hist_str = ""
+        if historique:
+            hist_str = "\n".join(
+                f"  - {h['date']} : {h['procedure']}" for h in historique[:5]
+            )
+
+        dirigeants_str = ", ".join(api_gouv.get("dirigeants_rne", [])) or "N/D"
+        effectif_str   = api_gouv.get("effectif_officiel", "N/D")
+        categorie_str  = api_gouv.get("categorie", "N/D")
+
+        prompt = f"""Tu es un analyste senior chez MASARE, fonds de private equity distressed (Paris, 58 rue de Monceau).
+Stratégie MASARE : retournement sans apport de fonds propres, travail du passif, actifs tangibles prioritaires. Ticket minimum 10M€.
+Modes d'entrée : plan de cession à la barre / reprise de titres avec négociation passif / debt-to-equity.
+Secteurs cibles : industrie avec actifs lourds, cybersécurité/défense (BITD), immobilier tertiaire/hôtellerie, marques en difficulté.
+
+Analyse ce dossier BODACC et rédige une fiche d'investissement courte en 4 sections.
+
+DONNÉES DISPONIBLES :
+- Société : {dossier['denomination']}
+- SIREN : {dossier['siren']}
+- Forme juridique : {dossier['forme_juridique']}
+- Secteur détecté : {dossier['secteur']}
+- Procédure : {dossier['procedure']}
+- Adresse : {dossier['adresse']} | Tribunal : {dossier['tribunal']}
+- Catégorie (INSEE) : {categorie_str} | Effectif : {effectif_str}
+- Dirigeants : {dirigeants_str}
+- CA ({annee_fin}) : {ca_str} | Résultat net : {resultat_str} | EBITDA : {ebitda_str}
+- Historique procédures BODACC :
+{hist_str or '  Aucun historique disponible'}
+
+INSTRUCTIONS :
+- Ton direct, pas de blabla, pas de conditionnel inutile
+- Si les données financières sont N/D, raisonne à partir du secteur et de la catégorie
+- Maximum 5 lignes par section
+
+### 🔍 Situation
+[Ce qui se passe : nature de la détresse, ancienneté probable, contexte sectoriel. Confirme ou nuance si c'est intéressant.]
+
+### 🎯 Angle MASARE
+[Mode d'entrée recommandé parmi les 3 stratégies MASARE. Pourquoi ce dossier correspond ou non à la stratégie. Mention du ticket estimé si possible.]
+
+### 💰 Actifs tangibles probables
+[Selon secteur et taille : machines, brevets, marques, immobilier, contrats LT, base clients B2B, licences, etc. Sois concret.]
+
+### ⚠️ Points de vigilance
+[2-3 red flags ou éléments à vérifier avant de creuser davantage.]"""
+
+        client  = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
+        message = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=900,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return message.content[0].text.strip()
+
+    except ImportError:
+        print("  [Claude API] Package anthropic non installé — analyse IA ignorée")
+        return ""
+    except Exception as ex:
+        print(f"  [Claude API] Exception : {ex}")
+        return ""
+
+
+# ---------------------------------------------------------------------------
+# SCORING
 # ---------------------------------------------------------------------------
 
 def detecter_secteur(texte_complet: str):
@@ -490,15 +531,6 @@ def detecter_secteur(texte_complet: str):
                     if mot in texte:
                         return nom, priorite_cible
     return None, 0
-
-
-def est_personne_physique(record: dict) -> bool:
-    p = extraire_personne(record)
-    if p.get("typePersonne", "").lower() == "pp":
-        return True
-    if p.get("prenom") and not p.get("denomination") and not p.get("nomCommercial"):
-        return True
-    return False
 
 
 def scorer_dossier(record: dict) -> tuple:
@@ -550,7 +582,7 @@ def scorer_dossier(record: dict) -> tuple:
 
 
 # ---------------------------------------------------------------------------
-# RÉCUPÉRATION BODACC (jour J)
+# RÉCUPÉRATION BODACC
 # ---------------------------------------------------------------------------
 
 def fetch_bodacc(nb_jours: int = JOURS_RECUL) -> list:
@@ -580,7 +612,7 @@ def generer_rapport(dossiers: list, date_rapport: str) -> str:
     lignes = [
         f"# Rapport Veille Distressed MASARE — {date_rapport}",
         "",
-        f"**{len(dossiers)} dossier(s) retenu(s)** — score ≥ {SCORE_MIN}, CA ≥ 20 M€ ou rentabilité historique",
+        f"**{len(dossiers)} dossier(s) retenu(s)** — score ≥ {SCORE_MIN}, secteur cible identifié",
         "",
         "---",
         "",
@@ -597,34 +629,30 @@ def generer_rapport(dossiers: list, date_rapport: str) -> str:
     for niveau in ["Haute", "Moyenne", "Basse"]:
         if not groupes[niveau]:
             continue
-        lignes.append(f"## {emoji_map[niveau]} Urgence {niveau}")
-        lignes.append("")
+        lignes += [f"## {emoji_map[niveau]} Urgence {niveau}", ""]
         for d in groupes[niveau]:
             geo_tag = " 📍" if d["geo_match"] else ""
-            lignes.append(f"### {d['denomination']}{geo_tag} — Score {d['score']}/10")
-            lignes.append("")
-            lignes.append("| Champ | Valeur |")
-            lignes.append("|-------|--------|")
-            lignes.append(f"| SIREN | {d['siren']} |")
-            lignes.append(f"| Adresse | {d['adresse']} |")
-            lignes.append(f"| Procédure | {d['procedure']} |")
-            lignes.append(f"| Secteur | {d['secteur'] or 'Non classifié'} |")
-            lignes.append(f"| Date parution | {d['date_parution']} |")
-            lignes.append("")
-            if d["contacts"]:
-                lignes.append("**Contacts :**")
-                for c in d["contacts"]:
-                    lignes.append(f"- {c}")
-                lignes.append("")
-            lignes.append("---")
-            lignes.append("")
+            lignes += [
+                f"### {d['denomination']}{geo_tag} — Score {d['score']}/10",
+                "",
+                "| Champ | Valeur |",
+                "|-------|--------|",
+                f"| SIREN | {d['siren']} |",
+                f"| Adresse | {d['adresse']} |",
+                f"| Procédure | {d['procedure']} |",
+                f"| Secteur | {d['secteur'] or 'Non classifié'} |",
+                f"| Date parution | {d['date_parution']} |",
+                "",
+                "---",
+                "",
+            ]
 
     lignes.append(f"*Généré automatiquement par MASARE-Veille — {datetime.now().strftime('%d/%m/%Y %H:%M')}*")
     return "\n".join(lignes)
 
 
 # ---------------------------------------------------------------------------
-# GITHUB ISSUES — UPSERT (1 issue par SIREN max)
+# GITHUB ISSUES — UPSERT
 # ---------------------------------------------------------------------------
 
 _issues_cache = None
@@ -681,7 +709,7 @@ def charger_issues_ouvertes() -> dict:
 
 
 def construire_titre_issue(dossier: dict) -> str:
-    urgence_tag = "URGENT" if dossier["urgence"] == "Haute" else "STANDARD"
+    urgence_tag  = "URGENT" if dossier["urgence"] == "Haute" else "STANDARD"
     secteur_court = (dossier["secteur"] or "Non classifié").split("(")[0].strip()
     if len(secteur_court) > 40:
         secteur_court = secteur_court[:37] + "..."
@@ -691,70 +719,72 @@ def construire_titre_issue(dossier: dict) -> str:
     )
 
 
-def construire_corps_issue(dossier: dict, pappers: dict, api_gouv: dict, historique: list, date_rapport: str) -> str:
+def construire_corps_issue(
+    dossier: dict,
+    api_gouv: dict,
+    historique: list,
+    pappers: dict,
+    analyse_ia: str,
+    date_rapport: str,
+) -> str:
     geo_tag = " 📍 Bassin prioritaire" if dossier["geo_match"] else ""
 
-    # --- Bloc identité ---
+    # Catégorie & taille
     categorie      = api_gouv.get("categorie", "N/D")
+    taille_warning = "\n> ⚠️ **PME** — taille à vérifier manuellement (CA cible ≥ 20M€)\n" if categorie == "PME" else ""
     effectif_off   = api_gouv.get("effectif_officiel", "N/D")
     annee_eff      = api_gouv.get("annee_effectif", "")
-    statut_adm     = api_gouv.get("statut", "N/D")
+    effectif_label = f"{effectif_off} ({annee_eff})" if annee_eff else effectif_off
+    statut         = api_gouv.get("statut", "N/D")
+    naf_code       = api_gouv.get("naf_code", "N/D")
+    date_creation  = api_gouv.get("date_creation", "N/D")
+
+    # Dirigeants RNE
     dirigeants_rne = api_gouv.get("dirigeants_rne", [])
-
-    # --- Bloc financier Pappers ---
-    if pappers.get("source") == "pappers_ok":
-        dirigeant  = pappers.get("dirigeant", "N/D")
-        effectif_p = pappers.get("effectif", "N/D")
-        capital    = fmt_eur(pappers.get("capital"))
-        naf        = pappers.get("naf", "N/D")
-        date_crea  = pappers.get("date_creation", "N/D")
-
-        comptes = pappers.get("comptes", [])
-        if comptes:
-            lignes_fin = [
-                "",
-                "### 📊 Données Financières (Pappers)",
-                "",
-                "| Exercice | CA | Résultat net | EBE (EBITDA) |",
-                "|----------|----|--------------|--------------|",
-            ]
-            for c in comptes:
-                annee = c.get("annee", "N/D")
-                ca_c  = fmt_eur(c.get("chiffre_affaires"))
-                res   = fmt_eur(c.get("resultat_net") or c.get("resultat"))
-                ebe   = fmt_eur(c.get("excedent_brut_exploitation"))
-                lignes_fin.append(f"| {annee} | {ca_c} | {res} | {ebe} |")
-            bloc_finances = "\n".join(lignes_fin)
-        else:
-            bloc_finances = f"\n### 📊 Données Financières\n\n| CA récent | {fmt_eur(pappers.get('ca_recent'))} |\n|-----------|------------|"
-
-        infos_pappers = f"""| Dirigeant (Pappers) | {dirigeant} |
-| Effectif (Pappers) | {effectif_p} |
-| Capital social | {capital} |
-| NAF | {naf} |
-| Date création | {date_crea} |"""
-    else:
-        infos_pappers = "| Données financières | PAPPERS_TOKEN absent — non disponible |"
-        bloc_finances = ""
-
-    # --- Bloc catégorie & effectif officiel (data.gouv) ---
-    if annee_eff:
-        effectif_off_label = f"{effectif_off} ({annee_eff})"
-    else:
-        effectif_off_label = effectif_off
-
-    infos_gouv = f"""| Catégorie entreprise | {categorie} |
-| Effectif officiel (INSEE) | {effectif_off_label} |
-| Statut administratif | {statut_adm} |"""
-
-    # --- Bloc dirigeants RNE ---
     if dirigeants_rne:
-        dirigeants_md = "\n".join(f"- {d}" for d in dirigeants_rne)
+        dirigeants_md   = "\n".join(f"- {d}" for d in dirigeants_rne)
         bloc_dirigeants = f"\n### 👤 Dirigeants (Registre National des Entreprises)\n\n{dirigeants_md}\n"
     else:
         bloc_dirigeants = ""
 
-    # --- Bloc historique BODACC ---
+    # Données financières Pappers
+    if pappers:
+        annee_fin = pappers.get("annee_dernier", "")
+        ca_str    = format_montant(pappers.get("ca_dernier"))
+        res_str   = format_montant(pappers.get("resultat_dernier"))
+        ebi_str   = format_montant(pappers.get("ebitda_dernier"))
+
+        lignes_fin = [
+            "",
+            f"### 📊 Données financières (source Pappers — exercice {annee_fin})",
+            "",
+            "| Indicateur | Valeur |",
+            "|------------|--------|",
+            f"| Chiffre d'affaires | {ca_str} |",
+            f"| EBITDA | {ebi_str} |",
+            f"| Résultat net | {res_str} |",
+        ]
+
+        exercices = pappers.get("exercices", [])
+        if len(exercices) > 1:
+            lignes_fin += [
+                "",
+                "**Évolution CA sur 3 ans :**",
+                "",
+                "| Exercice | CA | Résultat net |",
+                "|----------|-----|--------------|",
+            ]
+            for ex in exercices:
+                lignes_fin.append(
+                    f"| {ex['annee']} | {format_montant(ex['ca'])} | {format_montant(ex['resultat'])} |"
+                )
+
+        bloc_financier = "\n".join(lignes_fin)
+    else:
+        statut_pappers = "_Données financières non disponibles — activer PAPPERS_TOKEN pour CA/EBITDA/résultat_" if not PAPPERS_TOKEN else "_Données financières non retournées par Pappers pour ce SIREN_"
+        bloc_financier = f"\n### 📊 Données financières\n\n{statut_pappers}\n"
+
+    # Historique BODACC
     if historique:
         lignes_hist = [
             "",
@@ -769,7 +799,13 @@ def construire_corps_issue(dossier: dict, pappers: dict, api_gouv: dict, histori
     else:
         bloc_historique = ""
 
-    # --- Contacts ---
+    # Analyse IA
+    if analyse_ia:
+        bloc_ia = f"\n---\n\n## 🤖 Analyse MASARE\n\n{analyse_ia}\n"
+    else:
+        bloc_ia = ""
+
+    # Contacts
     contacts_md = (
         "\n".join(f"- {c}" for c in dossier["contacts"])
         if dossier["contacts"]
@@ -777,13 +813,16 @@ def construire_corps_issue(dossier: dict, pappers: dict, api_gouv: dict, histori
     )
 
     return f"""## {dossier['denomination']}{geo_tag}
-
+{taille_warning}
 | Champ | Valeur |
 |-------|--------|
 | SIREN | {dossier['siren']} |
 | Forme juridique | {dossier['forme_juridique']} |
-{infos_pappers}
-{infos_gouv}
+| Catégorie entreprise | {categorie} |
+| Effectif officiel (INSEE) | {effectif_label} |
+| Statut administratif | {statut} |
+| NAF | {naf_code} |
+| Date création | {date_creation} |
 | Adresse | {dossier['adresse']} |
 | Tribunal | {dossier['tribunal']} |
 | Procédure | {dossier['procedure']} |
@@ -792,10 +831,10 @@ def construire_corps_issue(dossier: dict, pappers: dict, api_gouv: dict, histori
 | Urgence | {dossier['urgence']} |
 | Date parution BODACC | {dossier['date_parution']} |
 | Dernière mise à jour veille | {date_rapport} |
-{bloc_finances}
 {bloc_dirigeants}
+{bloc_financier}
 {bloc_historique}
-
+{bloc_ia}
 ### 📞 Contacts & Mandataires
 {contacts_md}
 
@@ -804,7 +843,7 @@ _Généré automatiquement par MASARE-Veille_
 """
 
 
-def construire_labels(dossier: dict) -> list:
+def construire_labels(dossier: dict, api_gouv: dict) -> list:
     labels = []
     if dossier["urgence"] == "Haute":
         labels.append("alerte-urgent")
@@ -835,17 +874,27 @@ def construire_labels(dossier: dict) -> list:
     if "immobilier" in secteur or "hôtellerie" in secteur:
         labels.append("immobilier")
 
+    if api_gouv.get("categorie") == "PME":
+        labels.append("taille-a-verifier")
+
     return labels
 
 
-def upsert_issue_github(dossier: dict, pappers: dict, api_gouv: dict, historique: list, date_rapport: str):
+def upsert_issue_github(
+    dossier: dict,
+    api_gouv: dict,
+    historique: list,
+    pappers: dict,
+    analyse_ia: str,
+    date_rapport: str,
+):
     if not GITHUB_TOKEN:
         return
 
     siren  = dossier["siren"]
     titre  = construire_titre_issue(dossier)
-    corps  = construire_corps_issue(dossier, pappers, api_gouv, historique, date_rapport)
-    labels = construire_labels(dossier)
+    corps  = construire_corps_issue(dossier, api_gouv, historique, pappers, analyse_ia, date_rapport)
+    labels = construire_labels(dossier, api_gouv)
 
     issues_existantes = charger_issues_ouvertes()
 
@@ -867,7 +916,7 @@ def upsert_issue_github(dossier: dict, pappers: dict, api_gouv: dict, historique
         requests.post(
             f"{GITHUB_BASE}/issues/{issue_number}/comments",
             headers=GITHUB_HEADERS,
-            json={"body": f"🔄 **Mise à jour MASARE-Veille — {date_rapport}**\n\nNouvelle occurrence BODACC. Score et données mis à jour."},
+            json={"body": f"🔄 **Mise à jour MASARE-Veille — {date_rapport}**\n\nNouvelle occurrence BODACC. Données mises à jour."},
         )
         print(f"  ↺ Issue #{issue_number} mise à jour — {dossier['denomination']} (SIREN {siren})")
     else:
@@ -896,14 +945,14 @@ def upsert_issue_github(dossier: dict, pappers: dict, api_gouv: dict, historique
 def main():
     date_rapport = datetime.now().strftime("%Y%m%d")
     print(f"[MASARE-Veille] Démarrage — {date_rapport}")
-    if not PAPPERS_TOKEN:
-        print("[MASARE-Veille] ⚠️  PAPPERS_TOKEN absent — filtre taille et financials désactivés")
+    print(f"[MASARE-Veille] Pappers : {'activé' if PAPPERS_TOKEN else 'désactivé (PAPPERS_TOKEN absent)'}")
+    print(f"[MASARE-Veille] Claude IA : {'activée' if ANTHROPIC_KEY else 'désactivée (ANTHROPIC_API_KEY absent)'}")
 
     records = fetch_bodacc()
     print(f"[MASARE-Veille] {len(records)} annonce(s) BODACC récupérée(s)")
 
     dossiers_retenus = []
-    ecarts_score, ecarts_taille = 0, 0
+    ecarts_score = 0
 
     for record in records:
         score, secteur, procedure, urgence, geo_match = scorer_dossier(record)
@@ -912,56 +961,51 @@ def main():
             ecarts_score += 1
             continue
 
-        siren       = extraire_siren(record)
+        siren        = extraire_siren(record)
         denomination = extraire_denomination(record)
 
-        # Enrichissement 1 — Pappers (avec filtre taille + rentabilité)
-        pappers = enrichir_depuis_pappers(siren)
-        if not pappers.get("ca_filtre_ok", True):
-            ecarts_taille += 1
-            continue
+        print(f"  → Retenu : {denomination} (SIREN {siren}) — Score {score}/10")
 
-        # Enrichissement 2 — API Gouv (gratuit, sans clé)
-        api_gouv = enrichir_depuis_api_gouv(siren)
+        api_gouv       = enrichir_depuis_api_gouv(siren)
+        historique_rec = historique_bodacc(siren)
+        pappers        = enrichir_depuis_pappers(siren)
 
-        # Enrichissement 3 — Historique BODACC du SIREN
-        historique = historique_bodacc(siren)
+        if api_gouv.get("categorie") == "PME":
+            print(f"    ⚠️ PME — taille à vérifier")
 
         dossier = {
-            "denomination":   denomination,
-            "siren":          siren,
+            "denomination":    denomination,
+            "siren":           siren,
             "forme_juridique": extraire_forme_juridique(record),
-            "adresse":        extraire_adresse(record),
-            "tribunal":       extraire_tribunal(record),
-            "procedure":      procedure,
-            "secteur":        secteur,
-            "date_parution":  record.get("dateparution", "") or "N/A",
-            "contacts":       extraire_contacts(record),
-            "score":          score,
-            "urgence":        urgence,
-            "geo_match":      geo_match,
+            "adresse":         extraire_adresse(record),
+            "tribunal":        extraire_tribunal(record),
+            "procedure":       procedure,
+            "secteur":         secteur,
+            "date_parution":   record.get("dateparution", "") or "N/A",
+            "contacts":        extraire_contacts(record),
+            "score":           score,
+            "urgence":         urgence,
+            "geo_match":       geo_match,
         }
-        dossiers_retenus.append((dossier, pappers, api_gouv, historique))
+
+        analyse_ia = enrichir_avec_ia(dossier, api_gouv, pappers, historique_rec)
+
+        dossiers_retenus.append((dossier, api_gouv, historique_rec, pappers, analyse_ia))
 
     dossiers_retenus.sort(key=lambda x: x[0]["score"], reverse=True)
-    print(
-        f"[MASARE-Veille] {len(dossiers_retenus)} dossier(s) retenu(s) "
-        f"— {ecarts_score} écarté(s) score — {ecarts_taille} écarté(s) taille"
-    )
+    print(f"[MASARE-Veille] {len(dossiers_retenus)} dossier(s) retenu(s) — {ecarts_score} écarté(s) score")
 
-    # Rapport Markdown
     rapport = generer_rapport([d for d, *_ in dossiers_retenus], date_rapport)
     nom_fichier = f"rapport_{date_rapport}.md"
     with open(nom_fichier, "w", encoding="utf-8") as f:
         f.write(rapport)
     print(f"[MASARE-Veille] Rapport généré : {nom_fichier}")
 
-    # Issues GitHub
     if GITHUB_TOKEN:
         print("[MASARE-Veille] Synchronisation GitHub Issues...")
         charger_issues_ouvertes()
-        for dossier, pappers, api_gouv, historique in dossiers_retenus:
-            upsert_issue_github(dossier, pappers, api_gouv, historique, date_rapport)
+        for dossier, api_gouv, historique_rec, pappers, analyse_ia in dossiers_retenus:
+            upsert_issue_github(dossier, api_gouv, historique_rec, pappers, analyse_ia, date_rapport)
         print("[MASARE-Veille] Issues synchronisées")
     else:
         print("[MASARE-Veille] GITHUB_TOKEN absent — issues ignorées")
