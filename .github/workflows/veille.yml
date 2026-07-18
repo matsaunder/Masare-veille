@@ -2,11 +2,12 @@ name: Veille BODACC quotidienne
 
 on:
   schedule:
-    - cron: '0 4 * * *'   # 5h Paris (heure d'hiver) / 6h (heure d'été)
-  workflow_dispatch:       # déclenchement manuel possible
+    - cron: '0 4 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   fetch-bodacc:
@@ -26,6 +27,9 @@ jobs:
 
       - name: Fetch BODACC & générer rapport
         run: python scripts/bodacc.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: matsaunder/Masare-veille
 
       - name: Commit & push si nouveau rapport
         run: |
