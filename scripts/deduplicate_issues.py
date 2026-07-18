@@ -3,7 +3,8 @@ MASARE — Déduplication et nettoyage des issues GitHub
 Étapes :
   1. Fermer les issues auto-générées score < SCORE_MIN
   2. Fermer les issues auto-générées "Non classifié" (résidus ancien scoring)
-  3. Dédupliquer les issues restantes par nom normalisé
+  3. Fermer les issues auto-générées ancien format (sans analyse IA ni données financières)
+  4. Dédupliquer les issues restantes par nom normalisé
 """
 
 import os
@@ -20,7 +21,7 @@ HEADERS = {
 }
 BASE_URL = f"https://api.github.com/repos/{REPO}"
 
-SCORE_MIN = 8  # Doit correspondre au seuil dans bodacc.py
+SCORE_MIN = 16  # Doit correspondre au seuil dans bodacc.py
 MARQUEUR_AUTO = "Généré automatiquement par MASARE-Veille"
 
 
@@ -45,8 +46,15 @@ def normalise_nom(titre: str) -> str:
 
 
 def extraire_score(titre: str) -> float:
-    match = re.search(r'Score\s+([0-9]+(?:[.,][0-9]+)?)\s*/\s*10', titre, re.IGNORECASE)
-    return float(match.group(1).replace(",", ".")) if match else 0.0
+    """Extrait le score normalisé sur 20 (compatible anciens titres /10 et nouveaux /20)."""
+    m20 = re.search(r'Score\s+([0-9]+(?:[.,][0-9]+)?)\s*/\s*20', titre, re.IGNORECASE)
+    if m20:
+        return float(m20.group(1).replace(",", "."))
+    m10 = re.search(r'Score\s+([0-9]+(?:[.,][0-9]+)?)\s*/\s*10', titre, re.IGNORECASE)
+    if m10:
+        # Convertir le score /10 en /20 pour comparaison cohérente
+        return float(m10.group(1).replace(",", ".")) * 2
+    return 0.0
 
 
 def est_auto_generee(issue: dict) -> bool:
@@ -57,6 +65,39 @@ def est_auto_generee(issue: dict) -> bool:
 
 def est_non_classifiee(titre: str) -> bool:
     return "non classif" in titre.lower()
+
+
+MOTS_EXCLUS = [
+    "non classif", "btp", "construction", "travaux publics", "maçonnerie",
+    "transport routier", "fret", "messagerie", "livraison", "taxi", "vtc", "ambulance",
+    "restaur", "café", "traiteur", "snack", "brasserie", "pizzeria", "fast-food",
+    "commerce", "négoce", "grossiste", "distribution alimentaire", "supermarché",
+    "ehpad", "maison de retraite", "clinique", "soins de suite",
+    "aide à domicile", "service à la personne", "garde d'enfant",
+]
+
+
+def extraire_secteur_titre(titre: str) -> str:
+    """Extrait le secteur depuis le titre d'une issue MASARE."""
+    parties = re.split(r'\s*[—–]\s*', titre)
+    # Format : ALERTE X — Dénomination — Score N/10 — Secteur — Urgence
+    if len(parties) >= 5:
+        return parties[3].strip().lower()
+    if len(parties) >= 4:
+        return parties[3].strip().lower()
+    return ""
+
+
+def est_secteur_exclu(titre: str) -> bool:
+    """Retourne True si l'issue concerne un secteur exclu détectable depuis le titre."""
+    secteur = extraire_secteur_titre(titre)
+    return any(mot in secteur for mot in MOTS_EXCLUS)
+
+
+def est_ancien_format(issue: dict) -> bool:
+    """Retourne True si l'issue est auto-générée mais dans l'ancien format (sans données financières)."""
+    body = issue.get("body", "") or ""
+    return "📊 Données financières" not in body
 
 
 def get_all_open_issues() -> list:
@@ -134,10 +175,25 @@ def main():
 
     print(f"  → {n_non_classif} issue(s) 'Non classifié' fermée(s)")
 
-    # ── ÉTAPE 3 : Dédupliquer les issues restantes ────────────────────────────
-    print(f"\n── Étape 3 : Déduplication ({len(issues_apres_etape2)} issues restantes)")
-    groupes = defaultdict(list)
+    # ── ÉTAPE 3 : Fermer les issues ancien format à secteur exclu ────────────────
+    print(f"\n── Étape 3 : Fermeture des issues ancien format avec secteur exclu ou non pertinent")
+    n_ancien_format = 0
+    issues_apres_etape3 = []
     for issue in issues_apres_etape2:
+        if est_auto_generee(issue) and est_ancien_format(issue) and est_secteur_exclu(issue["title"]):
+            print(f"  Exclu — #{issue['number']} {issue['title'][:70]}")
+            fermer_issue(issue["number"], "secteur exclu des critères MASARE")
+            total_fermes += 1
+            n_ancien_format += 1
+        else:
+            issues_apres_etape3.append(issue)
+
+    print(f"  → {n_ancien_format} issue(s) secteur exclu fermée(s)")
+
+    # ── ÉTAPE 4 : Dédupliquer les issues restantes ────────────────────────────
+    print(f"\n── Étape 4 : Déduplication ({len(issues_apres_etape3)} issues restantes)")
+    groupes = defaultdict(list)
+    for issue in issues_apres_etape3:
         cle = normalise_nom(issue["title"])
         groupes[cle].append(issue)
 
