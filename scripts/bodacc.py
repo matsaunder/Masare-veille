@@ -1,7 +1,7 @@
 """
 MASARE - Veille Distressed BODACC
 Script de surveillance automatique des procédures collectives
-Critères affinés juillet 2026
+Critères affinés 18 juillet 2026
 
 Logique issues GitHub : 1 issue max par SIREN (upsert)
 - Si une issue ouverte existe pour ce SIREN → mise à jour du titre + commentaire
