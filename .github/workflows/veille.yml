@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '0 7 * * 1-5'   # Lundi–vendredi à 7h UTC (9h heure de Paris)
   workflow_dispatch:
+    inputs:
+      jours_recul:
+        description: 'Nombre de jours à remonter (ex: 60 pour backfill)'
+        required: false
+        default: '2'
 
 permissions:
   issues: write
@@ -23,6 +28,12 @@ jobs:
       - name: Installer les dépendances
         run: pip install requests anthropic
 
+      - name: Nettoyer les issues obsolètes
+        run: python scripts/deduplicate_issues.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: matsaunder/Masare-veille
+
       - name: Lancer la veille BODACC
         run: python scripts/bodacc.py
         env:
@@ -30,6 +41,7 @@ jobs:
           GITHUB_REPO: matsaunder/Masare-veille
           PAPPERS_TOKEN: ${{ secrets.PAPPERS_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          JOURS_RECUL: ${{ github.event.inputs.jours_recul || '2' }}
 
       - name: Committer le rapport
         run: |
