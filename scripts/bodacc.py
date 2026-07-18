@@ -31,7 +31,7 @@ GITHUB_BASE = f"https://api.github.com/repos/{GITHUB_REPO}"
 # CONFIGURATION
 # ---------------------------------------------------------------------------
 
-BODACC_API = "https://bodacc-datadila.opendatasoft.com/api/records/1.0/search/"
+BODACC_API = "https://bodacc-datadila.opendatasoft.com/api/explore/v2.1/catalog/datasets/bodacc-a/records"
 SCORE_MIN = 4
 JOURS_RECUL = 2
 
@@ -153,11 +153,12 @@ def normalise(texte: str) -> str:
 
 
 def extraire_champ(record: dict, *chemins) -> str:
-    """Tente d'extraire un champ selon plusieurs chemins possibles."""
-    fields = record.get("fields", {})
+    """Tente d'extraire un champ selon plusieurs chemins possibles.
+    API v2 : les champs sont directement à la racine du record (plus de wrapper 'fields').
+    """
     for chemin in chemins:
         parties = chemin.split(".")
-        valeur = fields
+        valeur = record
         for partie in parties:
             if isinstance(valeur, dict):
                 valeur = valeur.get(partie, "")
@@ -170,9 +171,10 @@ def extraire_champ(record: dict, *chemins) -> str:
 
 
 def extraire_json_imbrique(record: dict, cle: str) -> dict:
-    """Parse le JSON imbriqué dans publicationavis si présent."""
-    fields = record.get("fields", {})
-    raw = fields.get("publicationavis", "")
+    """Parse le JSON imbriqué dans publicationavis si présent.
+    API v2 : accès direct sans wrapper 'fields'.
+    """
+    raw = record.get("publicationavis", "") or record.get(cle, "")
     if not raw:
         return {}
     try:
@@ -367,22 +369,20 @@ def scorer_dossier(record: dict) -> tuple:
 # ---------------------------------------------------------------------------
 
 def fetch_bodacc(nb_jours: int = JOURS_RECUL) -> list:
-    """Récupère les annonces de procédures collectives sur les derniers jours."""
+    """Récupère les annonces de procédures collectives (API OpenDataSoft v2.1)."""
     date_debut = (datetime.now() - timedelta(days=nb_jours)).strftime("%Y-%m-%d")
 
     params = {
-        "dataset": "bodacc-a",
-        "q": f"familleavis_lib:\"Procédures collectives\" AND dateparution>={date_debut}",
-        "rows": 100,
-        "sort": "dateparution",
-        "order": "desc",
+        "where": f'familleavis_lib:"Procédures collectives" and dateparution>="{date_debut}"',
+        "limit": 100,
+        "order_by": "dateparution desc",
     }
 
     try:
         response = requests.get(BODACC_API, params=params, timeout=30)
         response.raise_for_status()
         data = response.json()
-        return data.get("records", [])
+        return data.get("results", [])
     except requests.RequestException as e:
         print(f"[ERREUR] Impossible de récupérer les données BODACC : {e}")
         return []
