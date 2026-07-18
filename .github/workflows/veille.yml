@@ -21,7 +21,7 @@ jobs:
           python-version: "3.11"
 
       - name: Installer les dépendances
-        run: pip install requests
+        run: pip install requests anthropic
 
       - name: Lancer la veille BODACC
         run: python scripts/bodacc.py
@@ -29,6 +29,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO: matsaunder/Masare-veille
           PAPPERS_TOKEN: ${{ secrets.PAPPERS_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
       - name: Committer le rapport
         run: |
