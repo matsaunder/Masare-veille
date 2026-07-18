@@ -10,11 +10,23 @@ Sources d'enrichissement :
 4. Pappers API (optionnel, PAPPERS_TOKEN) — CA, résultat net, EBITDA sur 3 exercices
 5. Claude API (optionnel, ANTHROPIC_API_KEY) — analyse IA : situation, angle MASARE, actifs, red flags
 
-Filtre taille via catégorie entreprise :
-  - GE  (Grande Entreprise)             → passe (CA >> 20M€)
-  - ETI (Entreprise de Taille Interm.)  → passe (CA 50M€–1,5Md€ par définition)
-  - PME (Petite et Moyenne Entreprise)  → flaggé "taille à vérifier"
-  - N/D                                 → laissé passer (indéterminé)
+Filtre taille via catégorie entreprise (INSEE) :
+  - GE  (Grande Entreprise)             → CA > 1,5 Md€            → +4 pts (D5)
+  - ETI (Entreprise de Taille Interm.)  → CA 50 M€ – 1,5 Md€     → +2 pts (D5)
+  - PME (Petite et Moyenne Entreprise)  → CA < 50 M€              → 0 pt   (à vérifier)
+  - N/D                                 → indéterminé             → 0 pt
+
+Scoring /20 :
+  D1 Secteur          : Priorité 1 → +6 | Priorité 2 → +4 | Exclu/Non classifié → disqualifiant
+  D3 Procédure        : Plan cession/Résolution → +4 | RJ/Mandat/Conciliation → +2 | LJ → +1 | Sauvegarde → 0
+  D4 Actifs tangibles : secteur avec actifs physiques identifiables → +2
+  D5 Taille           : GE → +4 | ETI → +2 | PME/N/D → 0
+  D6 Souveraineté     : défense/cyber/BITD/stratégique → +2
+  Géo                 : bassin prioritaire → +2
+  ── BONUS (après seuil PRE_AI=12) ──
+  D2 Rentabilité hist.: résultat net > 0 sur 2-3 ans → +4 | sur 1 an → +2 (source Pappers)
+  D7 Marque/Leader    : marque iconique → +4 | leader de niche → +2 (détection IA)
+  Score plafonné à 20. Seuil de publication : SCORE_MIN = 16.
 """
 
 import os
@@ -42,8 +54,9 @@ BODACC_API   = "https://bodacc-datadila.opendatasoft.com/api/explore/v2.1/catalo
 API_GOUV_URL = "https://recherche-entreprises.api.gouv.fr/search"
 PAPPERS_URL  = "https://api.pappers.fr/v2/entreprise"
 
-SCORE_MIN   = 8
-JOURS_RECUL = 2
+SCORE_MIN        = 16   # Seuil de publication des issues GitHub
+PRE_AI_THRESHOLD = 12   # Seuil minimum pour appeler Claude API (D7 bonus)
+JOURS_RECUL      = int(os.environ.get("JOURS_RECUL", "2"))
 
 # ---------------------------------------------------------------------------
 # SECTEURS CIBLES
@@ -54,17 +67,23 @@ SECTEURS = {
         "mots_cles": ["aéronaut", "défense", "armement", "naval", "spatia", "bitd",
                       "missi", "munition", "drone", "radar"],
         "priorite": 1,
+        "actifs_physiques": True,
+        "souverainete": True,
     },
     "Tech / SaaS B2B Vertical": {
         "mots_cles": ["saas", "logiciel métier", "erp", "éditeur de logiciel", "software",
                       "logiciel", "informatique", "cybersécur", "cloud",
                       "intelligence artificielle", "ia ", "progiciel"],
         "priorite": 1,
+        "actifs_physiques": False,
+        "souverainete": False,
     },
     "Chimie de Spécialités": {
         "mots_cles": ["chimie", "spécialités chimiques", "revêtement", "traitement de surface",
                       "peinture industrielle", "coatings", "adhésif", "polymère", "résine", "pigment"],
         "priorite": 1,
+        "actifs_physiques": True,
+        "souverainete": False,
     },
     "Industrie Manufacturière à Barrières Élevées": {
         "mots_cles": ["usinage", "mécaniqu", "manufactur", "métallurg", "fonderie", "forge",
@@ -72,53 +91,89 @@ SECTEURS = {
                       "machine-outil", "pharma", "laboratoir", "biotech", "médical", "medtech",
                       "dispositif médical"],
         "priorite": 1,
+        "actifs_physiques": True,
+        "souverainete": False,
     },
     "Immobilier & Hôtellerie": {
         "mots_cles": ["immobilier", "foncier", "hôtel", "hôtellerie", "résidence étudiante",
                       "coliving", "data center", "logistique urbaine", "entrepôt", "bureaux",
-                      "commerce retail", "centre commercial", "résidence gérée"],
+                      "commerce retail", "centre commercial", "résidence gérée",
+                      "promotion immobilière", "résidentiel", "logement", "lotissement",
+                      "copropriété", "aménagement foncier", "construction de maisons",
+                      "plateforme logistique", "hub logistique"],
         "priorite": 2,
+        "actifs_physiques": True,
+        "souverainete": False,
+    },
+    "Logistique & Entrepôts Immobiliers": {
+        # Transport/fret avec actifs physiques significatifs (entrepôts, plateformes)
+        # Conditions : présence de mots transport/fret ET mots immobilier/entrepôt
+        # Détection fine dans scorer_dossier via logique combinée
+        "mots_cles": ["plateforme logistique", "entrepôt logistique", "hub logistique",
+                      "messagerie express", "logistique immobilière", "parc logistique",
+                      "logistique du froid", "logistique pharmaceutique"],
+        "priorite": 2,
+        "actifs_physiques": True,
+        "souverainete": False,
     },
     "Marques & Retail Premium": {
         "mots_cles": ["marque", "luxe", "maroquinerie", "mode", "licenc", "prêt-à-porter",
                       "cosmétique premium", "bijouterie", "horlogerie", "enseigne"],
         "priorite": 2,
+        "actifs_physiques": False,
+        "souverainete": False,
     },
     "Énergie & Environnement": {
         "mots_cles": ["énergie", "solaire", "éolien", "recyclage", "déchets", "environnement",
                       "cleantech", "biomasse", "cogénération"],
         "priorite": 2,
+        "actifs_physiques": True,
+        "souverainete": False,
     },
     # EXCLUS
     "BTP & Construction [EXCLU]": {
         "mots_cles": ["construction", "bâtiment", "travaux publics", "maçonnerie",
                       "gros œuvre", "génie civil"],
         "priorite": -99,
+        "actifs_physiques": False,
+        "souverainete": False,
     },
-    "Transport & Logistique Généraliste [EXCLU]": {
-        "mots_cles": ["transport routier", "fret", "transitaire", "messagerie",
-                      "livraison", "camionnage", "taxi", "vtc", "ambulance"],
+    "Transport Généraliste [EXCLU]": {
+        # Exclu seulement si PAS d'actifs immobiliers/entrepôts identifiables
+        # Le transport avec entrepôts est traité par "Logistique & Entrepôts Immobiliers"
+        "mots_cles": ["taxi", "vtc", "ambulance", "camionnage", "transport de personnes",
+                      "autocar", "autobus", "transport scolaire"],
         "priorite": -99,
+        "actifs_physiques": False,
+        "souverainete": False,
     },
     "Commerce & Distribution Généraliste [EXCLU]": {
         "mots_cles": ["commerce", "négoce", "grossiste", "distribution alimentaire",
                       "supermarché", "épicerie"],
         "priorite": -99,
+        "actifs_physiques": False,
+        "souverainete": False,
     },
     "Restauration Standard [EXCLU]": {
         "mots_cles": ["restaur", "café", "traiteur", "snack", "brasserie",
                       "pizzeria", "fast-food"],
         "priorite": -99,
+        "actifs_physiques": False,
+        "souverainete": False,
     },
     "Immobilier Santé [EXCLU]": {
         "mots_cles": ["ehpad", "maison de retraite", "clinique", "ssr",
                       "soins de suite", "résidence médicalisée"],
         "priorite": -99,
+        "actifs_physiques": False,
+        "souverainete": False,
     },
     "Services à la Personne [EXCLU]": {
         "mots_cles": ["aide à domicile", "service à la personne",
                       "garde d'enfant", "ménage à domicile"],
         "priorite": -99,
+        "actifs_physiques": False,
+        "souverainete": False,
     },
 }
 
@@ -133,14 +188,15 @@ BASSINS_PRIORITAIRES = [
     "haute-garonne", "loire-atlantique", "bouches-du-rhône", "alpes-maritimes",
 ]
 
+# D3 — Procédure : points attribués
 PROCEDURES = {
-    "redressement judiciaire": +3,
-    "liquidation judiciaire":  +2,
-    "plan de cession":         +3,
-    "résolution de plan":      +2,
-    "mandat ad hoc":           +2,
-    "conciliation":            +1,
-    "sauvegarde":              -2,
+    "plan de cession":         4,  # Idéal MASARE : pas d'equity, reprise actifs
+    "résolution de plan":      4,  # Idem
+    "redressement judiciaire": 2,  # Potentiel plan cession
+    "mandat ad hoc":           2,  # Amont, négociation passif possible
+    "conciliation":            2,  # Amont, structuration possible
+    "liquidation judiciaire":  1,  # Actifs liquidés — possible mais plus dur
+    "sauvegarde":              0,  # Surveillance long terme seulement
 }
 
 TRANCHE_EFFECTIF = {
@@ -317,13 +373,14 @@ def enrichir_depuis_api_gouv(siren: str) -> dict:
             if libelle:
                 dirigeants_rne.append(libelle)
 
-        taille_ok   = categorie in ("ETI", "GE") or categorie == "N/D"
-        taille_flag = categorie
+        # D5 — Taille
+        taille_score = {"GE": 4, "ETI": 2}.get(categorie, 0)
+        taille_ok    = categorie in ("ETI", "GE") or categorie == "N/D"
 
         return {
             "categorie":         categorie,
             "taille_ok":         taille_ok,
-            "taille_flag":       taille_flag,
+            "taille_score":      taille_score,
             "effectif_officiel": effectif_label,
             "annee_effectif":    annee_eff,
             "statut":            statut,
@@ -394,7 +451,7 @@ def enrichir_depuis_pappers(siren: str) -> dict:
             timeout=10,
         )
         if resp.status_code == 401:
-            print(f"  [Pappers] Token invalide ou crédits insuffisants — enrichissement financier ignoré")
+            print("  [Pappers] Token invalide ou crédits insuffisants — enrichissement financier ignoré")
             return {}
         if not resp.ok:
             print(f"  [Pappers] Erreur {resp.status_code} pour SIREN {siren}")
@@ -407,10 +464,10 @@ def enrichir_depuis_pappers(siren: str) -> dict:
 
         exercices = []
         for f in finances[:3]:
-            annee   = f.get("annee", "")
-            ca      = f.get("chiffre_affaires")
+            annee    = f.get("annee", "")
+            ca       = f.get("chiffre_affaires")
             resultat = f.get("resultat")
-            ebitda  = f.get("excedent_brut_exploitation")
+            ebitda   = f.get("excedent_brut_exploitation")
             exercices.append({
                 "annee":    annee,
                 "ca":       ca,
@@ -431,17 +488,43 @@ def enrichir_depuis_pappers(siren: str) -> dict:
         return {}
 
 
+def calculer_bonus_pappers(pappers: dict) -> int:
+    """
+    D2 — Rentabilité historique (bonus, source Pappers).
+    net > 0 sur 2-3 exercices → +4 | sur 1 exercice → +2 | sinon → 0
+    """
+    if not pappers:
+        return 0
+    exercices = pappers.get("exercices", [])
+    if not exercices:
+        return 0
+    positifs = 0
+    for ex in exercices:
+        try:
+            if ex.get("resultat") is not None and float(ex["resultat"]) > 0:
+                positifs += 1
+        except (ValueError, TypeError):
+            pass
+    if positifs >= 2:
+        return 4
+    elif positifs == 1:
+        return 2
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # SOURCE 4 — CLAUDE API (optionnel — activé si ANTHROPIC_API_KEY défini)
 # ---------------------------------------------------------------------------
 
-def enrichir_avec_ia(dossier: dict, api_gouv: dict, pappers: dict, historique: list) -> str:
+def enrichir_avec_ia(dossier: dict, api_gouv: dict, pappers: dict, historique: list) -> tuple:
     """
     Génère une analyse investissement (situation, angle MASARE, actifs, red flags)
-    via l'API Claude. Désactivé silencieusement si ANTHROPIC_API_KEY absent.
+    via l'API Claude. Retourne (analyse_str, marque_score).
+    marque_score : 4 si marque iconique, 2 si leader de niche, 0 sinon.
+    Désactivé silencieusement si ANTHROPIC_API_KEY absent → ("", 0).
     """
     if not ANTHROPIC_KEY:
-        return ""
+        return "", 0
     try:
         import anthropic
 
@@ -495,45 +578,99 @@ INSTRUCTIONS :
 [Selon secteur et taille : machines, brevets, marques, immobilier, contrats LT, base clients B2B, licences, etc. Sois concret.]
 
 ### ⚠️ Points de vigilance
-[2-3 red flags ou éléments à vérifier avant de creuser davantage.]"""
+[2-3 red flags ou éléments à vérifier avant de creuser davantage.]
+
+---
+À la toute fin, sur une ligne seule, indique le score marque/leader :
+MARQUE_SCORE: X
+(X = 4 si marque iconique nationale ou internationale en difficulté — ex : Duralex, Brandt, Lafuma ; X = 2 si leader reconnu d'une niche sectorielle ; X = 0 sinon)"""
 
         client  = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
         message = client.messages.create(
             model="claude-haiku-4-5",
-            max_tokens=900,
+            max_tokens=1000,
             messages=[{"role": "user", "content": prompt}],
         )
-        return message.content[0].text.strip()
+        texte_brut = message.content[0].text.strip()
+
+        # Extraire MARQUE_SCORE
+        marque_score = 0
+        m = re.search(r"MARQUE_SCORE:\s*([024])", texte_brut)
+        if m:
+            marque_score = int(m.group(1))
+        # Retirer la ligne MARQUE_SCORE du texte affiché
+        analyse_propre = re.sub(r"\n?MARQUE_SCORE:\s*[0-9]+\s*$", "", texte_brut).strip()
+
+        return analyse_propre, marque_score
 
     except ImportError:
         print("  [Claude API] Package anthropic non installé — analyse IA ignorée")
-        return ""
+        return "", 0
     except Exception as ex:
         print(f"  [Claude API] Exception : {ex}")
-        return ""
+        return "", 0
 
 
 # ---------------------------------------------------------------------------
 # SCORING
 # ---------------------------------------------------------------------------
 
+MOTS_TRANSPORT_FRET = [
+    "transport routier", "fret", "transitaire", "messagerie", "livraison",
+    "camionnage", "affrètement", "groupage", "express"
+]
+MOTS_ENTREPOT = [
+    "entrepôt", "plateforme logistique", "hub logistique", "parc logistique",
+    "logistique du froid", "logistique pharmaceutique", "messagerie express",
+    "logistique immobilière"
+]
+
+
 def detecter_secteur(texte_complet: str):
+    """
+    Détection du secteur. Les correspondances positives (priorité 1 & 2)
+    l'emportent sur les exclusions, sauf si aucune correspondance positive.
+
+    Cas spécial transport/fret : exclu si pur (pas d'entrepôts), reclassé
+    en 'Logistique & Entrepôts Immobiliers' (priorité 2) si actifs physiques.
+    """
     texte = normalise(texte_complet)
-    for nom, config in SECTEURS.items():
-        if config["priorite"] == -99:
-            for mot in config["mots_cles"]:
-                if mot in texte:
-                    return nom, -99
+
+    # Cas spécial : transport/fret + entrepôt → reclassé immobilier logistique
+    has_transport = any(m in texte for m in MOTS_TRANSPORT_FRET)
+    has_entrepot  = any(m in texte for m in MOTS_ENTREPOT)
+    if has_transport and has_entrepot:
+        return "Logistique & Entrepôts Immobiliers", 2
+
+    # Priorité 1 puis 2 — avant les exclusions
     for priorite_cible in [1, 2]:
         for nom, config in SECTEURS.items():
             if config["priorite"] == priorite_cible:
                 for mot in config["mots_cles"]:
                     if mot in texte:
                         return nom, priorite_cible
+
+    # Exclusions (seulement si aucune correspondance positive)
+    for nom, config in SECTEURS.items():
+        if config["priorite"] == -99:
+            for mot in config["mots_cles"]:
+                if mot in texte:
+                    return nom, -99
+
+    # Transport/fret pur sans entrepôt → exclu
+    if has_transport and not has_entrepot:
+        return "Transport & Fret Généraliste [EXCLU]", -99
+
     return None, 0
 
 
 def scorer_dossier(record: dict) -> tuple:
+    """
+    Calcule le score de base (sans D5 taille, D2 Pappers, D7 IA).
+    Retourne (score_base, secteur, procedure, urgence, geo_match).
+    score_base = D1 + D3 + D4 + D6 + Géo (max théorique ≈ 14)
+    Retourne score_base=0 si dossier disqualifié (exclu ou non classifié).
+    """
     if est_personne_physique(record):
         return 0, None, "", "Basse", False
 
@@ -546,29 +683,47 @@ def scorer_dossier(record: dict) -> tuple:
     texte_complet = f"{denomination} {activite} {procedure_raw} {tribunal}"
     secteur_detecte, priorite = detecter_secteur(texte_complet)
 
-    if priorite in (-99, 0):
+    # D1 — disqualifiant si exclu ou non classifié
+    if priorite == -99 or priorite == 0:
         return 0, secteur_detecte if priorite == -99 else None, procedure_raw, "Basse", False
 
     score = 0
+
+    # D1 — Secteur
     if priorite == 1:
         score += 6
     elif priorite == 2:
         score += 4
 
-    if any(m in normalise(texte_complet) for m in ["bitd", "armement", "défense", "aéronaut", "naval", "dga"]):
-        score += 2
-
+    # D3 — Procédure
     proc_lower = normalise(procedure_raw)
-    for proc, bonus in PROCEDURES.items():
+    for proc, points in PROCEDURES.items():
         if proc in proc_lower:
-            score += bonus
+            score += points
             break
 
+    # D4 — Actifs tangibles physiques identifiables (selon configuration secteur)
+    config_secteur = SECTEURS.get(secteur_detecte, {})
+    if config_secteur.get("actifs_physiques", False):
+        score += 2
+
+    # D6 — Souveraineté / Stratégique
+    if config_secteur.get("souverainete", False):
+        score += 2
+    else:
+        # Détection complémentaire sur texte (cyber peut être dans d'autres secteurs)
+        mots_souv = ["bitd", "armement", "défense", "aéronaut", "naval", "dga",
+                     "cyber", "cybersécur", "souverain"]
+        if any(m in normalise(texte_complet) for m in mots_souv):
+            score += 2
+
+    # Géo — Bassin prioritaire
     texte_geo = normalise(f"{adresse} {tribunal}")
     geo_match = any(b in texte_geo for b in BASSINS_PRIORITAIRES)
     if geo_match:
-        score += 1
+        score += 2
 
+    # Urgence
     if "liquidation" in proc_lower or "cession" in proc_lower or "résolution" in proc_lower:
         urgence = "Haute"
     elif "redressement" in proc_lower:
@@ -578,7 +733,7 @@ def scorer_dossier(record: dict) -> tuple:
     else:
         urgence = "Moyenne"
 
-    return min(score, 10), secteur_detecte, procedure_raw, urgence, geo_match
+    return score, secteur_detecte, procedure_raw, urgence, geo_match
 
 
 # ---------------------------------------------------------------------------
@@ -612,7 +767,7 @@ def generer_rapport(dossiers: list, date_rapport: str) -> str:
     lignes = [
         f"# Rapport Veille Distressed MASARE — {date_rapport}",
         "",
-        f"**{len(dossiers)} dossier(s) retenu(s)** — score ≥ {SCORE_MIN}, secteur cible identifié",
+        f"**{len(dossiers)} dossier(s) retenu(s)** — score ≥ {SCORE_MIN}/20, secteur cible identifié",
         "",
         "---",
         "",
@@ -633,7 +788,7 @@ def generer_rapport(dossiers: list, date_rapport: str) -> str:
         for d in groupes[niveau]:
             geo_tag = " 📍" if d["geo_match"] else ""
             lignes += [
-                f"### {d['denomination']}{geo_tag} — Score {d['score']}/10",
+                f"### {d['denomination']}{geo_tag} — Score {d['score']}/20",
                 "",
                 "| Champ | Valeur |",
                 "|-------|--------|",
@@ -709,13 +864,13 @@ def charger_issues_ouvertes() -> dict:
 
 
 def construire_titre_issue(dossier: dict) -> str:
-    urgence_tag  = "URGENT" if dossier["urgence"] == "Haute" else "STANDARD"
+    urgence_tag   = "URGENT" if dossier["urgence"] == "Haute" else "STANDARD"
     secteur_court = (dossier["secteur"] or "Non classifié").split("(")[0].strip()
     if len(secteur_court) > 40:
         secteur_court = secteur_court[:37] + "..."
     return (
         f"ALERTE {urgence_tag} — {dossier['denomination']} — "
-        f"Score {dossier['score']}/10 — {secteur_court} — {dossier['urgence']} urgence"
+        f"Score {dossier['score']}/20 — {secteur_court} — {dossier['urgence']} urgence"
     )
 
 
@@ -781,7 +936,11 @@ def construire_corps_issue(
 
         bloc_financier = "\n".join(lignes_fin)
     else:
-        statut_pappers = "_Données financières non disponibles — activer PAPPERS_TOKEN pour CA/EBITDA/résultat_" if not PAPPERS_TOKEN else "_Données financières non retournées par Pappers pour ce SIREN_"
+        statut_pappers = (
+            "_Données financières non disponibles — activer PAPPERS_TOKEN pour CA/EBITDA/résultat_"
+            if not PAPPERS_TOKEN
+            else "_Données financières non retournées par Pappers pour ce SIREN_"
+        )
         bloc_financier = f"\n### 📊 Données financières\n\n{statut_pappers}\n"
 
     # Historique BODACC
@@ -827,7 +986,7 @@ def construire_corps_issue(
 | Tribunal | {dossier['tribunal']} |
 | Procédure | {dossier['procedure']} |
 | Secteur détecté | {dossier['secteur'] or 'Non classifié'} |
-| Score MASARE | {dossier['score']}/10 |
+| Score MASARE | {dossier['score']}/20 |
 | Urgence | {dossier['urgence']} |
 | Date parution BODACC | {dossier['date_parution']} |
 | Dernière mise à jour veille | {date_rapport} |
@@ -861,10 +1020,12 @@ def construire_labels(dossier: dict, api_gouv: dict) -> list:
         labels.append("amont")
 
     score = dossier["score"]
-    if score >= 9:
-        labels.append("score-9")
-    elif score >= 8:
-        labels.append("score-8")
+    if score == 20:
+        labels.append("score-20")
+    elif score >= 18:
+        labels.append("score-18-19")
+    elif score >= 16:
+        labels.append("score-16-17")
 
     secteur = (dossier["secteur"] or "").lower()
     if "bitd" in secteur or "défense" in secteur or "aéronaut" in secteur:
@@ -945,6 +1106,7 @@ def upsert_issue_github(
 def main():
     date_rapport = datetime.now().strftime("%Y%m%d")
     print(f"[MASARE-Veille] Démarrage — {date_rapport}")
+    print(f"[MASARE-Veille] Seuil publication : {SCORE_MIN}/20 | Seuil IA : {PRE_AI_THRESHOLD}/20")
     print(f"[MASARE-Veille] Pappers : {'activé' if PAPPERS_TOKEN else 'désactivé (PAPPERS_TOKEN absent)'}")
     print(f"[MASARE-Veille] Claude IA : {'activée' if ANTHROPIC_KEY else 'désactivée (ANTHROPIC_API_KEY absent)'}")
 
@@ -952,27 +1114,55 @@ def main():
     print(f"[MASARE-Veille] {len(records)} annonce(s) BODACC récupérée(s)")
 
     dossiers_retenus = []
-    ecarts_score = 0
+    ecarts_score     = 0
 
     for record in records:
-        score, secteur, procedure, urgence, geo_match = scorer_dossier(record)
+        # ── Scoring de base (D1, D3, D4, D6, Géo) — sans API externes ──
+        score_base, secteur, procedure, urgence, geo_match = scorer_dossier(record)
 
-        if score < SCORE_MIN:
-            ecarts_score += 1
+        if score_base == 0:
+            # Dossier disqualifié (PP, exclu, non classifié)
             continue
 
         siren        = extraire_siren(record)
         denomination = extraire_denomination(record)
 
-        print(f"  → Retenu : {denomination} (SIREN {siren}) — Score {score}/10")
+        # ── D5 — Taille (data.gouv.fr) ──
+        api_gouv     = enrichir_depuis_api_gouv(siren)
+        taille_score = api_gouv.get("taille_score", 0)
+        score_taille = score_base + taille_score
 
-        api_gouv       = enrichir_depuis_api_gouv(siren)
+        # ── Historique & Pappers ──
         historique_rec = historique_bodacc(siren)
         pappers        = enrichir_depuis_pappers(siren)
 
-        if api_gouv.get("categorie") == "PME":
-            print(f"    ⚠️ PME — taille à vérifier")
+        # ── D2 — Rentabilité historique (bonus Pappers) ──
+        bonus_pappers = calculer_bonus_pappers(pappers)
+        score_mid     = score_taille + bonus_pappers
 
+        # ── D7 — Marque/Leader (bonus Claude IA) — seulement si score_mid >= PRE_AI_THRESHOLD ──
+        if score_mid >= PRE_AI_THRESHOLD:
+            analyse_ia, marque_score = enrichir_avec_ia(dossier_temp := {
+                "denomination":    denomination,
+                "siren":           siren,
+                "forme_juridique": extraire_forme_juridique(record),
+                "adresse":         extraire_adresse(record),
+                "tribunal":        extraire_tribunal(record),
+                "procedure":       procedure,
+                "secteur":         secteur,
+                "contacts":        [],
+            }, api_gouv, pappers, historique_rec)
+        else:
+            analyse_ia, marque_score = "", 0
+
+        # ── Score final (plafonné à 20) ──
+        final_score = min(score_mid + marque_score, 20)
+
+        if final_score < SCORE_MIN:
+            ecarts_score += 1
+            continue
+
+        # ── Dossier retenu ──
         dossier = {
             "denomination":    denomination,
             "siren":           siren,
@@ -983,12 +1173,19 @@ def main():
             "secteur":         secteur,
             "date_parution":   record.get("dateparution", "") or "N/A",
             "contacts":        extraire_contacts(record),
-            "score":           score,
+            "score":           final_score,
             "urgence":         urgence,
             "geo_match":       geo_match,
         }
 
-        analyse_ia = enrichir_avec_ia(dossier, api_gouv, pappers, historique_rec)
+        detail_score = (
+            f"D1={score_base - (score_base - (6 if secteur and SECTEURS.get(secteur, {}).get('priorite') == 1 else 4 if secteur else 0))} "
+            f"taille=+{taille_score} pappers=+{bonus_pappers} IA=+{marque_score}"
+        )
+        print(f"  → Retenu : {denomination} (SIREN {siren}) — Score {final_score}/20")
+
+        if api_gouv.get("categorie") == "PME":
+            print(f"    ⚠️ PME — taille à vérifier")
 
         dossiers_retenus.append((dossier, api_gouv, historique_rec, pappers, analyse_ia))
 
