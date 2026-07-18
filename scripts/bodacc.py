@@ -1,7 +1,7 @@
 """
 MASARE - Veille Distressed BODACC
 Script de surveillance automatique des procédures collectives
-Critères affinés juillet 2026
+Critères affinés 18 juillet 2026
 
 Logique issues GitHub : 1 issue max par SIREN (upsert)
 - Si une issue ouverte existe pour ce SIREN → mise à jour du titre + commentaire
@@ -32,7 +32,7 @@ GITHUB_BASE = f"https://api.github.com/repos/{GITHUB_REPO}"
 # ---------------------------------------------------------------------------
 
 BODACC_API = "https://bodacc-datadila.opendatasoft.com/api/explore/v2.1/catalog/datasets/annonces-commerciales/records"
-SCORE_MIN = 4
+SCORE_MIN = 6
 JOURS_RECUL = 2
 
 # ---------------------------------------------------------------------------
@@ -277,11 +277,28 @@ def detecter_secteur(texte_complet: str):
     return None, 0
 
 
+def est_personne_physique(record: dict) -> bool:
+    """Retourne True si le record concerne une personne physique (pas une société)."""
+    p = extraire_personne(record)
+    if p.get("typePersonne", "").lower() == "pp":
+        return True
+    # Heuristique : prénom présent sans dénomination = personne physique
+    if p.get("prenom") and not p.get("denomination") and not p.get("nomCommercial"):
+        return True
+    return False
+
+
 def scorer_dossier(record: dict) -> tuple:
     """
     Calcule le score de pertinence (0-10) d'un dossier.
+    Logique : score de BASE = 0, points accordés uniquement aux secteurs cibles.
+    Un dossier sans secteur identifié ne passe jamais le seuil.
     Retourne (score, secteur_detecte, procedure_detectee, urgence, geo_match)
     """
+    # --- Filtre personnes physiques ---
+    if est_personne_physique(record):
+        return 0, None, "", "Basse", False
+
     denomination = extraire_denomination(record)
     activite = extraire_activite(record)
     adresse = extraire_adresse(record)
@@ -293,39 +310,39 @@ def scorer_dossier(record: dict) -> tuple:
     # --- Détection secteur ---
     secteur_detecte, priorite = detecter_secteur(texte_complet)
 
-    # Secteur exclu → score plafonné à 3 (jamais retenu)
+    # Secteur exclu ou non identifié → score 0 (jamais retenu)
     if priorite == -99:
-        return 3, secteur_detecte, procedure_raw, "Basse", False
+        return 0, secteur_detecte, procedure_raw, "Basse", False
+    if priorite == 0:
+        return 0, None, procedure_raw, "Basse", False
 
-    # --- Score de base ---
-    score = 5
+    # --- Score : part uniquement de 0, points accordés aux cibles ---
+    score = 0
 
-    # --- Bonus secteur ---
+    # Bonus secteur
     if priorite == 1:
-        score += 2
+        score += 6   # Tier 1 — industrie lourde, SaaS, cyber, défense
     elif priorite == 2:
-        score += 1
-
-    # --- Bonus/Malus procédure ---
-    proc_lower = normalise(procedure_raw)
-    proc_bonus = 0
-    for proc, bonus in PROCEDURES.items():
-        if proc in proc_lower:
-            proc_bonus = bonus
-            break
-    score += proc_bonus
+        score += 4   # Tier 2 — immobilier, marques, énergie
 
     # Bonus BITD spécifique
     if any(mot in normalise(texte_complet) for mot in ["bitd", "armement", "défense", "aéronaut", "naval", "dga"]):
         score += 2
 
-    # --- Bonus géographique ---
+    # Bonus/Malus procédure
+    proc_lower = normalise(procedure_raw)
+    for proc, bonus in PROCEDURES.items():
+        if proc in proc_lower:
+            score += bonus
+            break
+
+    # Bonus géographique
     texte_geo = normalise(f"{adresse} {tribunal}")
     geo_match = any(bassin in texte_geo for bassin in BASSINS_PRIORITAIRES)
     if geo_match:
         score += 1
 
-    # --- Urgence ---
+    # Urgence
     if "liquidation" in proc_lower or "cession" in proc_lower:
         urgence = "Haute"
     elif "redressement" in proc_lower or "résolution" in proc_lower:
@@ -335,9 +352,7 @@ def scorer_dossier(record: dict) -> tuple:
     else:
         urgence = "Moyenne"
 
-    # Plafonner le score à 10
     score = min(score, 10)
-
     return score, secteur_detecte, procedure_raw, urgence, geo_match
 
 
