@@ -84,7 +84,7 @@ def commenter_et_fermer(numero: int, principale: int):
     print(f"    Issue #{numero} → {statut}")
 
 
-SCORE_MIN = 6  # Doit correspondre au seuil dans bodacc.py
+SCORE_MIN = 8  # Doit correspondre au seuil dans bodacc.py
 
 
 def fermer_issue(numero: int, raison: str):
