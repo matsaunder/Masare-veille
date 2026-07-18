@@ -3,6 +3,9 @@ name: Dédupliquer les issues MASARE
 on:
   workflow_dispatch:
 
+permissions:
+  issues: write
+
 jobs:
   dedup:
     runs-on: ubuntu-latest
