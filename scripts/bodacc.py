@@ -1,7 +1,7 @@
 """
 MASARE - Veille Distressed BODACC
 Script de surveillance automatique des procédures collectives
-Critères affinés 18 juillet 2026
+Critères affinés juillet 2026
 
 Logique issues GitHub : 1 issue max par SIREN (upsert)
 - Si une issue ouverte existe pour ce SIREN → mise à jour du titre + commentaire
@@ -31,7 +31,7 @@ GITHUB_BASE = f"https://api.github.com/repos/{GITHUB_REPO}"
 # CONFIGURATION
 # ---------------------------------------------------------------------------
 
-BODACC_API = "https://bodacc-datadila.opendatasoft.com/api/explore/v2.1/catalog/datasets/bodacc-a/records"
+BODACC_API = "https://bodacc-datadila.opendatasoft.com/api/explore/v2.1/catalog/datasets/annonces-commerciales/records"
 SCORE_MIN = 4
 JOURS_RECUL = 2
 
@@ -152,29 +152,9 @@ def normalise(texte: str) -> str:
     return texte.lower()
 
 
-def extraire_champ(record: dict, *chemins) -> str:
-    """Tente d'extraire un champ selon plusieurs chemins possibles.
-    API v2 : les champs sont directement à la racine du record (plus de wrapper 'fields').
-    """
-    for chemin in chemins:
-        parties = chemin.split(".")
-        valeur = record
-        for partie in parties:
-            if isinstance(valeur, dict):
-                valeur = valeur.get(partie, "")
-            else:
-                valeur = ""
-                break
-        if valeur:
-            return str(valeur)
-    return ""
-
-
-def extraire_json_imbrique(record: dict, cle: str) -> dict:
-    """Parse le JSON imbriqué dans publicationavis si présent.
-    API v2 : accès direct sans wrapper 'fields'.
-    """
-    raw = record.get("publicationavis", "") or record.get(cle, "")
+def parse_json_field(record: dict, cle: str) -> dict:
+    """Parse un champ JSON imbriqué (jugement, listepersonnes, etc.)"""
+    raw = record.get(cle, "")
     if not raw:
         return {}
     try:
@@ -184,95 +164,92 @@ def extraire_json_imbrique(record: dict, cle: str) -> dict:
         return {}
 
 
+def extraire_personne(record: dict) -> dict:
+    """Extrait les données de la personne/société depuis listepersonnes."""
+    lp = parse_json_field(record, "listepersonnes")
+    personne = lp.get("personne", lp.get("personnes", None))
+    if isinstance(personne, list):
+        personne = personne[0] if personne else {}
+    return personne if isinstance(personne, dict) else {}
+
+
 def extraire_denomination(record: dict) -> str:
-    avis = extraire_json_imbrique(record, "publicationavis")
+    # Champ direct 'commercant' dans le nouveau dataset
+    nom = record.get("commercant", "")
+    if nom:
+        return nom
+    # Fallback : depuis listepersonnes
+    p = extraire_personne(record)
     return (
-        extraire_champ(record, "denomination", "nomCommercial", "raisonSociale")
-        or avis.get("denomination", "")
-        or avis.get("nomCommercial", "")
+        p.get("denomination", "")
+        or p.get("nomCommercial", "")
+        or f"{p.get('nom', '')} {p.get('prenom', '')}".strip()
         or "N/A"
     )
 
 
 def extraire_siren(record: dict) -> str:
-    avis = extraire_json_imbrique(record, "publicationavis")
-    return (
-        extraire_champ(record, "numeroidentifiant", "siren")
-        or avis.get("numeroIdentifiant", "")
-        or avis.get("siren", "")
-        or "N/A"
-    )
+    # Champ 'registre' : liste ["843905241", "843 905 241"]
+    registre = record.get("registre", [])
+    if registre:
+        siren = str(registre[0]).replace(" ", "").strip()
+        if len(siren) >= 9:
+            return siren[:9]
+    # Fallback : depuis listepersonnes
+    p = extraire_personne(record)
+    num = p.get("numeroImmatriculation", {})
+    if isinstance(num, dict):
+        return num.get("numeroIdentification", "").replace(" ", "") or "N/A"
+    return "N/A"
 
 
 def extraire_adresse(record: dict) -> str:
-    avis = extraire_json_imbrique(record, "publicationavis")
-    ville = (
-        extraire_champ(record, "ville", "commune")
-        or avis.get("adresse", {}).get("ville", "")
-        or avis.get("ville", "")
-        or ""
-    )
-    dept = (
-        extraire_champ(record, "departement", "codePostal")
-        or avis.get("adresse", {}).get("codePostal", "")
-        or ""
-    )
-    return f"{ville} ({dept})" if ville and dept else ville or dept or "N/A"
+    ville = record.get("ville", "")
+    cp = record.get("cp", "")
+    dept = record.get("departement_nom_officiel", "")
+    if ville and cp:
+        return f"{ville} ({cp}) — {dept}"
+    return ville or dept or "N/A"
 
 
 def extraire_tribunal(record: dict) -> str:
-    avis = extraire_json_imbrique(record, "publicationavis")
-    return (
-        extraire_champ(record, "tribunal")
-        or avis.get("tribunal", "")
-        or "N/A"
-    )
+    return record.get("tribunal", "") or "N/A"
 
 
 def extraire_forme_juridique(record: dict) -> str:
-    avis = extraire_json_imbrique(record, "publicationavis")
-    return (
-        extraire_champ(record, "formejuridique")
-        or avis.get("formeJuridique", "")
-        or "N/A"
-    )
+    p = extraire_personne(record)
+    return p.get("formeJuridique", "") or p.get("typePersonne", "") or "N/A"
 
 
 def extraire_activite(record: dict) -> str:
-    avis = extraire_json_imbrique(record, "publicationavis")
-    return (
-        extraire_champ(record, "activite", "codeNaf", "libelleCodeNaf")
-        or avis.get("activite", "")
-        or avis.get("codeNaf", "")
-        or ""
-    )
+    p = extraire_personne(record)
+    return p.get("activite", "") or ""
 
 
 def extraire_contacts(record: dict) -> list:
-    """Extrait administrateurs, mandataires, liquidateurs."""
+    """Extrait administrateurs, mandataires, liquidateurs depuis listepersonnes."""
     contacts = []
-    avis = extraire_json_imbrique(record, "publicationavis")
-
-    for cle in ["administrateurJudiciaire", "mandataireJudiciaire", "liquidateur", "representantCreanciers"]:
-        val = avis.get(cle, "")
+    lp = parse_json_field(record, "listepersonnes")
+    for cle in ["administrateurJudiciaire", "mandataireJudiciaire", "liquidateur",
+                 "representantCreanciers", "mandataireLiquidateur"]:
+        val = lp.get(cle, "")
         if val:
-            contacts.append(f"{cle.replace('J', ' J').replace('C', ' C').strip()} : {val}")
-
-    raw_contacts = extraire_champ(record, "listepersonnes")
-    if raw_contacts and not contacts:
-        contacts.append(raw_contacts[:200])
-
+            label = cle.replace("Judiciaire", " Judiciaire").replace("Liquidateur", " Liquidateur")
+            contacts.append(f"{label} : {val}")
     return contacts
 
 
 def extraire_procedure(record: dict) -> str:
-    avis = extraire_json_imbrique(record, "publicationavis")
-    return (
-        extraire_champ(record, "familleavis_lib", "typeavis_lib", "jugement")
-        or avis.get("typeAvis", "")
-        or avis.get("jugement", "")
-        or ""
-    )
+    """Extrait la nature de la procédure depuis le champ jugement (JSON)."""
+    jugement = parse_json_field(record, "jugement")
+    if jugement:
+        return (
+            jugement.get("nature", "")
+            or jugement.get("famille", "")
+            or jugement.get("type", "")
+            or ""
+        )
+    return record.get("typeavis_lib", "") or record.get("familleavis_lib", "") or ""
 
 # ---------------------------------------------------------------------------
 # DÉTECTION SECTEUR ET SCORING
@@ -676,7 +653,7 @@ def main():
             "tribunal": extraire_tribunal(record),
             "procedure": procedure,
             "secteur": secteur,
-            "date_parution": extraire_champ(record, "dateparution") or "N/A",
+            "date_parution": record.get("dateparution", "") or "N/A",
             "contacts": extraire_contacts(record),
             "score": score,
             "urgence": urgence,
