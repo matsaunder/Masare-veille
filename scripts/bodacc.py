@@ -2,12 +2,30 @@
 MASARE - Veille Distressed BODACC
 Script de surveillance automatique des procédures collectives
 Critères affinés juillet 2026
+
+Logique issues GitHub : 1 issue max par SIREN (upsert)
+- Si une issue ouverte existe pour ce SIREN → mise à jour du titre + commentaire
+- Sinon → création d'une nouvelle issue
 """
 
+import os
 import requests
 import json
 import re
 from datetime import datetime, timedelta
+
+# ---------------------------------------------------------------------------
+# GITHUB ISSUES — CONFIG
+# ---------------------------------------------------------------------------
+
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+GITHUB_REPO = os.environ.get("GITHUB_REPO", "matsaunder/Masare-veille")
+GITHUB_HEADERS = {
+    "Authorization": f"Bearer {GITHUB_TOKEN}",
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+}
+GITHUB_BASE = f"https://api.github.com/repos/{GITHUB_REPO}"
 
 # ---------------------------------------------------------------------------
 # CONFIGURATION
@@ -430,6 +448,208 @@ def generer_rapport(dossiers_retenus: list, date_rapport: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# GITHUB ISSUES — LOGIQUE UPSERT (1 issue par SIREN max)
+# ---------------------------------------------------------------------------
+
+_issues_cache = None  # Cache des issues ouvertes pour éviter les appels répétés
+
+def normalise_nom_issue(titre: str) -> str:
+    """Extrait et normalise le nom de société depuis un titre d'issue GitHub."""
+    match = re.search(
+        r'ALERTE[^—–\-]*[—–\-]+\s*(.+?)\s*[—–\-]+\s*Score',
+        titre, re.IGNORECASE | re.UNICODE
+    )
+    nom = match.group(1).strip() if match else titre
+    nom = nom.lower()
+    for forme in ["scop sa", "scop", " holding", " groupe", " group",
+                   " industries", " industrie", " sas", " sa", " sarl",
+                   " srl", " sci", " sca", " eurl", " sasu"]:
+        nom = nom.replace(forme, "")
+    return re.sub(r"[^a-z0-9]", "", nom).strip()
+
+
+def charger_issues_ouvertes() -> dict:
+    """
+    Charge toutes les issues ouvertes et les indexe par :
+    - SIREN (extrait du corps) — clé primaire
+    - Nom normalisé (extrait du titre) — clé de fallback
+    Retourne un dict {cle: issue_dict}
+    """
+    global _issues_cache
+    if _issues_cache is not None:
+        return _issues_cache
+
+    if not GITHUB_TOKEN:
+        _issues_cache = {}
+        return _issues_cache
+
+    index = {}
+    page = 1
+    while True:
+        resp = requests.get(
+            f"{GITHUB_BASE}/issues",
+            headers=GITHUB_HEADERS,
+            params={"state": "open", "per_page": 100, "page": page},
+        )
+        if not resp.ok:
+            break
+        batch = resp.json()
+        if not batch:
+            break
+        for issue in batch:
+            if "pull_request" in issue:
+                continue
+            # Index 1 : par SIREN (clé primaire)
+            body = issue.get("body", "") or ""
+            match_siren = re.search(r"SIREN[^\|]*\|\s*([0-9]{9})", body)
+            if match_siren:
+                index[match_siren.group(1).strip()] = issue
+            # Index 2 : par nom normalisé (fallback pour anciennes issues sans SIREN)
+            cle_nom = normalise_nom_issue(issue["title"])
+            if cle_nom and cle_nom not in index:
+                index[cle_nom] = issue
+        page += 1
+
+    _issues_cache = index
+    return index
+
+
+def construire_titre_issue(dossier: dict) -> str:
+    urgence_tag = "URGENT" if dossier["urgence"] == "Haute" else "STANDARD"
+    secteur_court = (dossier["secteur"] or "Non classifié").split("(")[0].strip()
+    # Tronquer secteur si trop long
+    if len(secteur_court) > 40:
+        secteur_court = secteur_court[:37] + "..."
+    return (
+        f"ALERTE {urgence_tag} — {dossier['denomination']} — "
+        f"Score {dossier['score']}/10 — {secteur_court} — {dossier['urgence']} urgence"
+    )
+
+
+def construire_corps_issue(dossier: dict, date_rapport: str) -> str:
+    geo_tag = " 📍 Bassin prioritaire" if dossier["geo_match"] else ""
+    contacts_md = "\n".join(f"- {c}" for c in dossier["contacts"]) if dossier["contacts"] else "_Aucun contact extrait_"
+    return f"""## {dossier['denomination']}{geo_tag}
+
+| Champ | Valeur |
+|-------|--------|
+| SIREN | {dossier['siren']} |
+| Forme juridique | {dossier['forme_juridique']} |
+| Adresse | {dossier['adresse']} |
+| Tribunal | {dossier['tribunal']} |
+| Procédure | {dossier['procedure']} |
+| Secteur détecté | {dossier['secteur'] or 'Non classifié'} |
+| Score MASARE | {dossier['score']}/10 |
+| Urgence | {dossier['urgence']} |
+| Date parution BODACC | {dossier['date_parution']} |
+| Dernière mise à jour veille | {date_rapport} |
+
+### Contacts
+{contacts_md}
+
+---
+_Généré automatiquement par MASARE-Veille_
+"""
+
+
+def construire_labels(dossier: dict) -> list:
+    labels = []
+    if dossier["urgence"] == "Haute":
+        labels.append("alerte-urgent")
+    elif dossier["urgence"] == "Moyenne":
+        labels.append("alert-prioritaire")
+
+    proc_lower = (dossier["procedure"] or "").lower()
+    if "liquidation" in proc_lower:
+        labels.append("liquidation")
+    elif "redressement" in proc_lower:
+        labels.append("redressement-judiciaire")
+    elif "cession" in proc_lower:
+        labels.append("plan-de-cession")
+    elif "conciliation" in proc_lower or "mandat" in proc_lower:
+        labels.append("amont")
+
+    score = dossier["score"]
+    if score >= 9:
+        labels.append("score-9")
+    elif score >= 8:
+        labels.append("score-8")
+
+    secteur = (dossier["secteur"] or "").lower()
+    if "bitd" in secteur or "défense" in secteur or "aéronaut" in secteur:
+        labels.append("BITD")
+    if "saas" in secteur or "logiciel" in secteur or "cyber" in secteur:
+        labels.append("tech-saas")
+    if "immobilier" in secteur or "hôtellerie" in secteur:
+        labels.append("immobilier")
+
+    return labels
+
+
+def upsert_issue_github(dossier: dict, date_rapport: str):
+    """
+    Crée ou met à jour une issue GitHub pour ce dossier.
+    Règle : 1 issue max par SIREN.
+    """
+    if not GITHUB_TOKEN:
+        return
+
+    siren = dossier["siren"]
+    titre = construire_titre_issue(dossier)
+    corps = construire_corps_issue(dossier, date_rapport)
+    labels = construire_labels(dossier)
+
+    issues_existantes = charger_issues_ouvertes()
+
+    # Recherche : SIREN en priorité, puis nom normalisé
+    cle_match = None
+    if siren != "N/A" and siren in issues_existantes:
+        cle_match = siren
+    else:
+        cle_nom = normalise_nom_issue(titre)
+        if cle_nom in issues_existantes:
+            cle_match = cle_nom
+
+    if cle_match:
+        # ── UPDATE : mise à jour du titre, du corps et des labels
+        issue = issues_existantes[cle_match]
+        issue_number = issue["number"]
+
+        requests.patch(
+            f"{GITHUB_BASE}/issues/{issue_number}",
+            headers=GITHUB_HEADERS,
+            json={"title": titre, "body": corps, "labels": labels},
+        )
+        # Commentaire de mise à jour
+        requests.post(
+            f"{GITHUB_BASE}/issues/{issue_number}/comments",
+            headers=GITHUB_HEADERS,
+            json={"body": f"🔄 **Mise à jour automatique MASARE-Veille — {date_rapport}**\n\nNouvelle occurrence BODACC détectée. Score et informations mis à jour."},
+        )
+        print(f"  ↺ Issue #{issue_number} mise à jour — {dossier['denomination']} (SIREN {siren})")
+
+    else:
+        # ── CREATE : nouvelle issue
+        resp = requests.post(
+            f"{GITHUB_BASE}/issues",
+            headers=GITHUB_HEADERS,
+            json={"title": titre, "body": corps, "labels": labels},
+        )
+        if resp.ok:
+            num = resp.json().get("number", "?")
+            print(f"  ✓ Issue #{num} créée — {dossier['denomination']} (SIREN {siren})")
+            # Mettre à jour le cache (SIREN + nom normalisé)
+            nouvelle = resp.json()
+            if siren != "N/A":
+                issues_existantes[siren] = nouvelle
+            cle_nom = normalise_nom_issue(titre)
+            if cle_nom:
+                issues_existantes[cle_nom] = nouvelle
+        else:
+            print(f"  ✗ Erreur création issue pour {dossier['denomination']} : {resp.status_code}")
+
+
+# ---------------------------------------------------------------------------
 # POINT D'ENTRÉE
 # ---------------------------------------------------------------------------
 
@@ -469,13 +689,22 @@ def main():
 
     print(f"[MASARE-Veille] {len(dossiers_retenus)} dossier(s) retenu(s) après filtrage")
 
+    # Générer le rapport Markdown
     rapport = generer_rapport(dossiers_retenus, date_rapport)
-
     nom_fichier = f"rapport_{date_rapport}.md"
     with open(nom_fichier, "w", encoding="utf-8") as f:
         f.write(rapport)
-
     print(f"[MASARE-Veille] Rapport généré : {nom_fichier}")
+
+    # Créer / mettre à jour les issues GitHub (1 par SIREN)
+    if GITHUB_TOKEN:
+        print(f"[MASARE-Veille] Synchronisation GitHub Issues...")
+        charger_issues_ouvertes()  # Pré-charger le cache
+        for dossier in dossiers_retenus:
+            upsert_issue_github(dossier, date_rapport)
+        print(f"[MASARE-Veille] Issues synchronisées")
+    else:
+        print(f"[MASARE-Veille] GITHUB_TOKEN absent — issues ignorées")
 
 
 if __name__ == "__main__":
