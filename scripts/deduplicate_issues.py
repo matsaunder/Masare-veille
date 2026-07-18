@@ -84,6 +84,24 @@ def commenter_et_fermer(numero: int, principale: int):
     print(f"    Issue #{numero} → {statut}")
 
 
+SCORE_MIN = 6  # Doit correspondre au seuil dans bodacc.py
+
+
+def fermer_issue(numero: int, raison: str):
+    requests.post(
+        f"{BASE_URL}/issues/{numero}/comments",
+        headers=HEADERS,
+        json={"body": f"⚠️ Issue fermée automatiquement — {raison}"},
+    )
+    resp = requests.patch(
+        f"{BASE_URL}/issues/{numero}",
+        headers=HEADERS,
+        json={"state": "closed", "state_reason": "not_planned"},
+    )
+    statut = "✓ fermée" if resp.ok else f"✗ erreur {resp.status_code}"
+    print(f"    Issue #{numero} → {statut}")
+
+
 def main():
     if not TOKEN:
         print("[ERREUR] GITHUB_TOKEN non défini.")
@@ -93,37 +111,46 @@ def main():
     issues = get_all_open_issues()
     print(f"[MASARE-Dedup] {len(issues)} issue(s) ouverte(s)")
 
-    # Debug : affiche les noms normalisés
-    print("\n[DEBUG] Normalisation des titres :")
-    groupes = defaultdict(list)
+    total_fermes = 0
+
+    # ── ÉTAPE 1 : Fermer les issues sous le seuil de score ──────────────────
+    print(f"\n── Étape 1 : Fermeture des issues score < {SCORE_MIN}")
+    issues_valides = []
     for issue in issues:
+        score = extraire_score(issue["title"])
+        if score > 0 and score < SCORE_MIN:
+            print(f"  Score {score}/10 — #{issue['number']} {issue['title'][:60]}")
+            fermer_issue(issue["number"], f"score {score}/10 sous le seuil {SCORE_MIN}/10")
+            total_fermes += 1
+        else:
+            issues_valides.append(issue)
+
+    print(f"  → {total_fermes} issue(s) fermée(s) pour score insuffisant")
+
+    # ── ÉTAPE 2 : Dédupliquer les issues restantes ───────────────────────────
+    print(f"\n── Étape 2 : Déduplication ({len(issues_valides)} issues restantes)")
+    groupes = defaultdict(list)
+    for issue in issues_valides:
         cle = normalise_nom(issue["title"])
-        print(f"  #{issue['number']:3d} | clé='{cle}' | {issue['title'][:70]}")
         groupes[cle].append(issue)
 
     doublons = {k: v for k, v in groupes.items() if len(v) > 1}
-    print(f"\n[MASARE-Dedup] {len(doublons)} groupe(s) avec doublons\n")
+    print(f"  {len(doublons)} groupe(s) avec doublons")
 
-    total_fermes = 0
     for cle, groupe in doublons.items():
-        print(f"── Groupe '{cle}' ({len(groupe)} issues)")
+        print(f"\n  Groupe '{cle}' ({len(groupe)} issues)")
         principale = max(groupe, key=lambda i: (extraire_score(i["title"]), i["number"]))
-        print(f"   Principale : #{principale['number']} — {principale['title'][:60]}")
+        print(f"  Principale : #{principale['number']} — {principale['title'][:60]}")
 
-        # Consolider les labels
         labels = list({lbl["name"] for i in groupe for lbl in i.get("labels", [])})
-        requests.patch(
-            f"{BASE_URL}/issues/{principale['number']}",
-            headers=HEADERS,
-            json={"labels": labels},
-        )
+        requests.patch(f"{BASE_URL}/issues/{principale['number']}", headers=HEADERS, json={"labels": labels})
 
         for issue in groupe:
             if issue["number"] != principale["number"]:
-                commenter_et_fermer(issue["number"], principale["number"])
+                fermer_issue(issue["number"], f"doublon de #{principale['number']}")
                 total_fermes += 1
 
-    print(f"\n[MASARE-Dedup] Terminé — {total_fermes} issue(s) fermée(s)")
+    print(f"\n[MASARE-Dedup] Terminé — {total_fermes} issue(s) fermée(s) au total")
 
 
 if __name__ == "__main__":
