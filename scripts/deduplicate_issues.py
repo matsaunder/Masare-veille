@@ -1,6 +1,7 @@
 """
 MASARE — Déduplication et nettoyage des issues GitHub
 Étapes :
+  0. Patcher les issues existantes sans lien Pappers (one-time migration)
   1. Fermer les issues auto-générées score < SCORE_MIN
   2. Fermer les issues auto-générées "Non classifié" (résidus ancien scoring)
   3. Fermer les issues auto-générées ancien format (sans analyse IA ni données financières)
@@ -9,6 +10,7 @@ MASARE — Déduplication et nettoyage des issues GitHub
 
 import os
 import re
+import unicodedata
 import requests
 from collections import defaultdict
 
@@ -23,6 +25,61 @@ BASE_URL = f"https://api.github.com/repos/{REPO}"
 
 SCORE_MIN = 12  # Doit correspondre au seuil dans bodacc.py
 MARQUEUR_AUTO = "Généré automatiquement par MASARE-Veille"
+
+
+def construire_lien_pappers(denomination: str, siren: str) -> str:
+    """Construit le lien direct vers la fiche Pappers (même logique que bodacc.py)."""
+    slug = denomination.lower().strip()
+    slug = unicodedata.normalize("NFD", slug)
+    slug = "".join(c for c in slug if unicodedata.category(c) != "Mn")
+    slug = re.sub(r"[^a-z0-9]+", "-", slug).strip("-")
+    return f"https://www.pappers.fr/entreprise/{slug}-{siren}"
+
+
+def extraire_siren_depuis_body(body: str) -> str:
+    """Extrait le SIREN depuis le corps d'une issue MASARE."""
+    m = re.search(r"SIREN[^\|]*\|\s*([0-9]{9})", body)
+    return m.group(1).strip() if m else ""
+
+
+def patcher_lien_pappers(issue: dict) -> bool:
+    """
+    Ajoute le lien Pappers en tête du corps de l'issue si absent.
+    Retourne True si le patch a été appliqué.
+    """
+    body = issue.get("body", "") or ""
+    titre = issue.get("title", "")
+
+    # Déjà patché ?
+    if "pappers.fr/entreprise/" in body:
+        return False
+
+    siren = extraire_siren_depuis_body(body)
+    if not siren:
+        return False
+
+    # Extraire la dénomination depuis le titre (format ALERTE … — DENOMINATION — Score …)
+    m = re.search(r'ALERTE[^—–\-]*[—–\-]+\s*(.+?)\s*[—–\-]+\s*Score', titre, re.IGNORECASE)
+    denomination = m.group(1).strip() if m else titre
+
+    lien = construire_lien_pappers(denomination, siren)
+    lien_line = f"🔗 [Fiche Pappers]({lien})\n\n"
+
+    # Insérer après la première ligne "## DENOMINATION"
+    if body.startswith("## "):
+        newline_idx = body.index("\n")
+        new_body = body[:newline_idx + 1] + "\n" + lien_line + body[newline_idx + 1:]
+    else:
+        new_body = lien_line + body
+
+    resp = requests.patch(
+        f"{BASE_URL}/issues/{issue['number']}",
+        headers=HEADERS,
+        json={"body": new_body},
+    )
+    statut = "✓" if resp.ok else f"✗ {resp.status_code}"
+    print(f"    Lien Pappers ajouté #{issue['number']} ({denomination}) → {statut}")
+    return resp.ok
 
 
 def normalise_nom(titre: str) -> str:
@@ -142,6 +199,15 @@ def main():
     print(f"[MASARE-Dedup] {len(issues)} issue(s) ouverte(s)")
 
     total_fermes = 0
+
+    # ── ÉTAPE 0 : Patcher le lien Pappers sur les issues existantes ─────────────
+    print(f"\n── Étape 0 : Ajout lien Pappers sur issues existantes (si absent)")
+    n_patched = 0
+    for issue in issues:
+        if est_auto_generee(issue):
+            if patcher_lien_pappers(issue):
+                n_patched += 1
+    print(f"  → {n_patched} issue(s) patchée(s) avec le lien Pappers")
 
     # ── ÉTAPE 1 : Fermer les issues auto-générées sous le seuil de score ───────
     print(f"\n── Étape 1 : Fermeture des issues auto-générées score < {SCORE_MIN}")
