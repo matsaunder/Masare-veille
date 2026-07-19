@@ -1,7 +1,7 @@
 """
 MASARE - Veille Distressed BODACC
 Script de surveillance automatique des procédures collectives
-Critères affinés 18 juillet 2026
+Critères affinés 19 juillet 2026
 
 Sources d'enrichissement :
 1. BODACC (annonces-commerciales) — procédure du jour
@@ -42,7 +42,7 @@ from datetime import datetime, timedelta
 GITHUB_TOKEN    = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_REPO     = os.environ.get("GITHUB_REPO", "matsaunder/Masare-veille")
 PAPPERS_TOKEN   = os.environ.get("PAPPERS_TOKEN", "")
-ANTHROPIC_KEY   = os.environ.get("ANTHROPIC_API_KEY", "")
+GOOGLE_AI_KEY   = os.environ.get("GOOGLE_AI_KEY", "")
 
 GITHUB_HEADERS = {
     "Authorization": f"Bearer {GITHUB_TOKEN}",
@@ -519,14 +519,16 @@ def calculer_bonus_pappers(pappers: dict) -> int:
 def enrichir_avec_ia(dossier: dict, api_gouv: dict, pappers: dict, historique: list) -> tuple:
     """
     Génère une analyse investissement (situation, angle MASARE, actifs, red flags)
-    via l'API Claude. Retourne (analyse_str, marque_score).
+    via Google Gemini Flash (tier gratuit). Retourne (analyse_str, marque_score).
     marque_score : 4 si marque iconique, 2 si leader de niche, 0 sinon.
-    Désactivé silencieusement si ANTHROPIC_API_KEY absent → ("", 0).
+    Désactivé silencieusement si GOOGLE_AI_KEY absent → ("", 0).
     """
-    if not ANTHROPIC_KEY:
+    if not GOOGLE_AI_KEY:
         return "", 0
     try:
-        import anthropic
+        import google.generativeai as genai
+
+        genai.configure(api_key=GOOGLE_AI_KEY)
 
         ca_str       = format_montant(pappers.get("ca_dernier")) if pappers else "N/D"
         resultat_str = format_montant(pappers.get("resultat_dernier")) if pappers else "N/D"
@@ -585,13 +587,9 @@ INSTRUCTIONS :
 MARQUE_SCORE: X
 (X = 4 si marque iconique nationale ou internationale en difficulté — ex : Duralex, Brandt, Lafuma ; X = 2 si leader reconnu d'une niche sectorielle ; X = 0 sinon)"""
 
-        client  = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
-        message = client.messages.create(
-            model="claude-haiku-4-5",
-            max_tokens=1000,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        texte_brut = message.content[0].text.strip()
+        model    = genai.GenerativeModel("gemini-2.0-flash")
+        response = model.generate_content(prompt)
+        texte_brut = response.text.strip()
 
         # Extraire MARQUE_SCORE
         marque_score = 0
@@ -604,10 +602,10 @@ MARQUE_SCORE: X
         return analyse_propre, marque_score
 
     except ImportError:
-        print("  [Claude API] Package anthropic non installé — analyse IA ignorée")
+        print("  [Gemini] Package google-generativeai non installé — analyse IA ignorée")
         return "", 0
     except Exception as ex:
-        print(f"  [Claude API] Exception : {ex}")
+        print(f"  [Gemini] Exception : {ex}")
         return "", 0
 
 
@@ -1108,7 +1106,7 @@ def main():
     print(f"[MASARE-Veille] Démarrage — {date_rapport}")
     print(f"[MASARE-Veille] Seuil publication : {SCORE_MIN}/20 | Seuil IA : {PRE_AI_THRESHOLD}/20")
     print(f"[MASARE-Veille] Pappers : {'activé' if PAPPERS_TOKEN else 'désactivé (PAPPERS_TOKEN absent)'}")
-    print(f"[MASARE-Veille] Claude IA : {'activée' if ANTHROPIC_KEY else 'désactivée (ANTHROPIC_API_KEY absent)'}")
+    print(f"[MASARE-Veille] Gemini IA : {'activée' if GOOGLE_AI_KEY else 'désactivée (GOOGLE_AI_KEY absent)'}")
 
     records = fetch_bodacc()
     print(f"[MASARE-Veille] {len(records)} annonce(s) BODACC récupérée(s)")
