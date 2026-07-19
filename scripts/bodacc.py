@@ -177,6 +177,122 @@ SECTEURS = {
     },
 }
 
+# ---------------------------------------------------------------------------
+# EXCLUSIONS PAR CODE NAF (garde-fou après enrichissement data.gouv)
+# Certaines sociétés ont un texte BODACC qui contient accidentellement
+# des mots de secteurs cibles (ex: "immobilier" dans une activité secondaire
+# alors que le NAF principal est taxi, restauration, etc.)
+# Ces codes NAF sont vérifiés APRÈS la détection sectorielle initiale.
+# ---------------------------------------------------------------------------
+
+NAF_EXCLUS_PREFIXES = [
+    "49.3",   # Transport de voyageurs : taxis (49.32Z), autocars (49.39)
+    "56.",    # Restauration : restaurants, traiteurs, cafés
+    "86.1",   # Hôpitaux et cliniques
+    "86.2",   # Pratique médicale et dentaire
+    "86.9",   # Autres activités pour la santé humaine
+    "87.",    # Hébergement médico-social et social (EHPAD, maisons de retraite)
+    "88.",    # Action sociale sans hébergement
+    "96.",    # Autres services personnels (coiffure, pressing, pompes funèbres)
+    "47.1",   # Commerce de détail en magasin non spécialisé (supermarchés)
+    "47.2",   # Commerce de détail alimentaire en magasin spécialisé
+    "47.6",   # Commerce de détail biens culturels et de loisir
+    "47.7",   # Commerce de détail autres articles en magasin spécialisé
+    "47.8",   # Commerce de détail sur éventaires et marchés
+    "47.9",   # Commerce de détail hors magasin (sauf 47.91 = e-commerce, conservé)
+]
+
+# NAF spécifiquement préservés même s'ils commencent par un préfixe exclu
+NAF_EXCLUS_EXCEPTIONS = [
+    "47.91",  # Commerce de détail par correspondance / internet — peut être intéressant
+]
+
+
+# ---------------------------------------------------------------------------
+# MAPPING NAF → SECTEUR MASARE (détection positive par code officiel)
+# Utilisé comme vérification complémentaire après enrichissement data.gouv.
+# Priorité : 1 = cible principale, 2 = cible secondaire
+# ---------------------------------------------------------------------------
+
+NAF_SECTEURS_MASARE = {
+    # Défense & Aéronautique (BITD)
+    "30.3":  ("Défense & Aéronautique (BITD)", 1),  # construction aéronautique
+    "25.4":  ("Défense & Aéronautique (BITD)", 1),  # fabrication armes et munitions
+    "30.1":  ("Défense & Aéronautique (BITD)", 1),  # construction navale
+    "71.2":  ("Défense & Aéronautique (BITD)", 1),  # essais et analyses techniques (BITD adjacent)
+    # Tech / Cyber
+    "62.0":  ("Tech / SaaS B2B Vertical", 1),   # programmation, conseil informatique
+    "63.1":  ("Tech / SaaS B2B Vertical", 1),   # traitement données, hébergement
+    "61.":   ("Tech / SaaS B2B Vertical", 1),   # télécommunications
+    # Industrie manufacturière
+    "24.":   ("Industrie Manufacturière à Barrières Élevées", 1),   # métallurgie
+    "25.":   ("Industrie Manufacturière à Barrières Élevées", 1),   # produits métalliques
+    "26.":   ("Industrie Manufacturière à Barrières Élevées", 1),   # électronique, optique
+    "27.":   ("Industrie Manufacturière à Barrières Élevées", 1),   # équipements électriques
+    "28.":   ("Industrie Manufacturière à Barrières Élevées", 1),   # machines et équipements
+    "29.":   ("Industrie Manufacturière à Barrières Élevées", 1),   # automobiles (équipementiers)
+    "21.":   ("Industrie Manufacturière à Barrières Élevées", 1),   # pharma
+    "32.5":  ("Industrie Manufacturière à Barrières Élevées", 1),   # dispositifs médicaux
+    "23.":   ("Industrie Manufacturière à Barrières Élevées", 1),   # produits minéraux non métalliques
+    # Chimie de spécialités
+    "20.":   ("Chimie de Spécialités", 1),       # industrie chimique
+    # Immobilier & Hôtellerie
+    "68.":   ("Immobilier & Hôtellerie", 2),     # activités immobilières
+    "55.1":  ("Immobilier & Hôtellerie", 2),     # hôtels
+    "41.1":  ("Immobilier & Hôtellerie", 2),     # promotion immobilière
+    "41.2":  ("Immobilier & Hôtellerie", 2),     # construction de maisons individuelles
+    # Énergie & Environnement
+    "35.":   ("Énergie & Environnement", 2),     # production/distribution énergie
+    "38.":   ("Énergie & Environnement", 2),     # collecte/traitement déchets
+    "39.":   ("Énergie & Environnement", 2),     # dépollution
+    # Logistique avec actifs physiques
+    "52.1":  ("Logistique & Entrepôts Immobiliers", 2),  # entreposage
+    "52.2":  ("Logistique & Entrepôts Immobiliers", 2),  # services auxiliaires transports
+    # Marques & Retail Premium
+    "14.":   ("Marques & Retail Premium", 2),    # habillement
+    "15.":   ("Marques & Retail Premium", 2),    # cuir et chaussures
+    "32.1":  ("Marques & Retail Premium", 2),    # joaillerie, bijouterie
+}
+
+
+def naf_vers_secteur_masare(naf_code: str):
+    """
+    Retourne (secteur, priorite) si le code NAF correspond à un secteur MASARE,
+    sinon (None, 0). Utilisé comme confirmation/reclassification après data.gouv.
+    """
+    if not naf_code or naf_code == "N/D":
+        return None, 0
+    naf = naf_code.strip()
+    # Essayer du plus précis au moins précis
+    for longueur in [4, 3, 2]:
+        prefix = naf[:longueur]
+        if prefix in NAF_SECTEURS_MASARE:
+            return NAF_SECTEURS_MASARE[prefix]
+    return None, 0
+
+
+def est_naf_exclu(naf_code: str) -> bool:
+    """
+    Retourne True si le code NAF correspond à un secteur systématiquement
+    exclu des critères MASARE. Guard-rail post-enrichissement data.gouv.
+    """
+    if not naf_code or naf_code == "N/D":
+        return False
+    naf = naf_code.strip().upper()
+    # Vérifier exceptions en premier
+    for exc in NAF_EXCLUS_EXCEPTIONS:
+        if naf.startswith(exc.upper().replace(".", "")):
+            return False
+        if naf.startswith(exc.upper()):
+            return False
+    # Vérifier exclusions
+    for prefixe in NAF_EXCLUS_PREFIXES:
+        p = prefixe.upper()
+        if naf.startswith(p) or naf.startswith(p.replace(".", "")):
+            return True
+    return False
+
+
 BASSINS_PRIORITAIRES = [
     "paris", "île-de-france", "hauts-de-seine", "seine-saint-denis", "val-de-marne",
     "lyon", "bordeaux", "toulouse", "nantes", "lille", "marseille", "grenoble", "strasbourg",
@@ -1132,6 +1248,26 @@ def main():
         api_gouv     = enrichir_depuis_api_gouv(siren)
         taille_score = api_gouv.get("taille_score", 0)
         score_taille = score_base + taille_score
+
+        # ── Guard-rail NAF : exclusion et reclassification sectorielle ──
+        naf_code = api_gouv.get("naf_code", "")
+        if est_naf_exclu(naf_code):
+            print(f"  ✗ Exclu NAF {naf_code} — {denomination}")
+            continue
+
+        # Reclassification : si le NAF indique un secteur MASARE plus précis,
+        # on le substitue (ex: texte BODACC avait "immobilier" mais NAF=62.0 → Tech)
+        secteur_naf, priorite_naf = naf_vers_secteur_masare(naf_code)
+        if secteur_naf and secteur_naf != secteur:
+            print(f"  ↺ Reclassification NAF {naf_code} : {secteur} → {secteur_naf}")
+            # Recalculer D1 si la priorité change
+            ancienne_priorite = SECTEURS.get(secteur, {}).get("priorite", 0) if secteur else 0
+            if priorite_naf != ancienne_priorite:
+                diff_d1 = (6 if priorite_naf == 1 else 4 if priorite_naf == 2 else 0) \
+                         - (6 if ancienne_priorite == 1 else 4 if ancienne_priorite == 2 else 0)
+                score_base  += diff_d1
+                score_taille = score_base + taille_score
+            secteur = secteur_naf
 
         # ── Historique & Pappers ──
         historique_rec = historique_bodacc(siren)
