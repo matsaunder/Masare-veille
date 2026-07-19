@@ -23,10 +23,10 @@ Scoring /20 :
   D5 Taille           : GE → +4 | ETI → +2 | PME/N/D → 0
   D6 Souveraineté     : défense/cyber/BITD/stratégique → +2
   Géo                 : bassin prioritaire → +2
-  ── BONUS (après seuil PRE_AI=12) ──
-  D2 Rentabilité hist.: résultat net > 0 sur 2-3 ans → +4 | sur 1 an → +2 (source Pappers)
-  D7 Marque/Leader    : marque iconique → +4 | leader de niche → +2 (détection IA)
-  Score plafonné à 20. Seuil de publication : SCORE_MIN = 16.
+  ── BONUS (Pappers D2 toujours calculé si token ; IA D7 gated sur score_mid ≥ PRE_AI_THRESHOLD=10) ──
+  D2 Rentabilité hist.: résultat net > 0 sur 2-3 ans → +4 | sur 1 an → +2 (source Pappers API)
+  D7 Marque/Leader    : marque iconique → +4 | leader de niche → +2 (Groq IA)
+  Score plafonné à 20. Seuil de publication : SCORE_MIN = 12.
 """
 
 import os
@@ -550,6 +550,7 @@ def enrichir_depuis_api_gouv(siren: str) -> dict:
             "taille_ok":         taille_ok,
             "taille_score":      taille_score,
             "effectif_officiel": effectif_label,
+            "tranche_code":      tranche_code,   # code brut INSEE pour filtre effectif
             "annee_effectif":    annee_eff,
             "statut":            statut,
             "naf_code":          naf_code,
@@ -1534,27 +1535,15 @@ def main():
         secteur_accepte_petite_taille = secteur and any(
             s in secteur for s in ["Immobilier", "Marques", "Hôtellerie", "Logistique"]
         )
-        tranche_code = api_gouv.get("tranche_effectif_salarie_raw", "") or ""
-        # Récupérer le code brut de tranche depuis data.gouv directement
-        if not tranche_code:
-            # Inférer depuis le label si besoin
-            effectif_label = api_gouv.get("effectif_officiel", "")
-            if "Non employeuse" in effectif_label:
-                tranche_code = "NN"
-            elif "0 salarié" in effectif_label:
-                tranche_code = "00"
-            elif "1–2" in effectif_label:
-                tranche_code = "01"
-            elif "3–5" in effectif_label:
-                tranche_code = "02"
+        tranche_code = api_gouv.get("tranche_code", "") or ""
 
         if tranche_code in EFFECTIF_TROP_PETIT and not secteur_accepte_petite_taille:
             print(f"  ✗ Trop petit (effectif {api_gouv.get('effectif_officiel','?')}) — {denomination}")
             continue
 
-        # ── Filtre CA + enrichissement financier public Pappers ─────────────
-        # Scraping page publique Pappers (gratuit) : pour filtrer ET enrichir l'issue
-        # Pas appliqué à l'immobilier (SCI/foncières sans CA mais avec actifs)
+        # ── Filtre CA public (gratuit, tente scraping Pappers) ──────────────
+        # Note : retourne {} depuis GitHub Actions (403 Cloudflare) — filtre désactivé
+        # en pratique, mais enrichit l'issue quand disponible (exécution locale/VPS)
         finances_publiques = {}
         if not secteur_accepte_petite_taille:
             finances_publiques = scraper_finances_pappers_public(denomination, siren)
@@ -1562,12 +1551,25 @@ def main():
             if ca_public and ca_public < CA_MIN_MASARE:
                 print(f"  ✗ CA trop faible ({ca_public/1e6:.2f}M€ < {CA_MIN_MASARE/1e6:.0f}M€) — {denomination}")
                 continue
-            # Si Pappers API est aussi actif, les données API priment pour le scoring
-            # mais les données publiques restent disponibles pour l'affichage
 
-        # ── Historique & Pappers ──
+        # ── Historique BODACC ─────────────────────────────────────────────
         historique_rec = historique_bodacc(siren)
-        pappers        = enrichir_depuis_pappers(siren)
+
+        # ── Pappers API (3 crédits/appel) — gate score pour éviter gaspillage ──
+        # D2_MAX=+4 (rentabilité), D7_MAX=+4 (marque, gated PRE_AI=10).
+        # Si score_taille < 6 : score_mid_max = 10, IA non appelée (PRE_AI=10 non atteint)
+        # → final_max = 10 < SCORE_MIN=12 → Pappers inutile, crédit économisé.
+        pappers = {}
+        if PAPPERS_TOKEN and score_taille >= 6:
+            pappers = enrichir_depuis_pappers(siren)
+            # Filtre CA Pappers API (filet de sécurité si scraping public a 403'd)
+            if pappers and not secteur_accepte_petite_taille:
+                ca_pappers = pappers.get("ca_dernier")
+                if ca_pappers is not None and ca_pappers < CA_MIN_MASARE:
+                    print(f"  ✗ CA Pappers trop faible ({ca_pappers/1e6:.2f}M€ < {CA_MIN_MASARE/1e6:.0f}M€) — {denomination}")
+                    continue
+        elif not PAPPERS_TOKEN:
+            pappers = enrichir_depuis_pappers(siren)  # retourne {} silencieusement si pas de token
 
         # ── D2 — Rentabilité historique (bonus Pappers) ──
         bonus_pappers = calculer_bonus_pappers(pappers)
