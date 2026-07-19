@@ -26,7 +26,7 @@ jobs:
           python-version: "3.11"
 
       - name: Installer les dépendances
-        run: pip install requests anthropic
+        run: pip install requests google-generativeai
 
       - name: Nettoyer les issues obsolètes
         run: python scripts/deduplicate_issues.py
@@ -40,7 +40,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO: matsaunder/Masare-veille
           PAPPERS_TOKEN: ${{ secrets.PAPPERS_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_AI_KEY: ${{ secrets.GOOGLE_AI_KEY }}
           JOURS_RECUL: ${{ github.event.inputs.jours_recul || '2' }}
 
       - name: Committer le rapport
