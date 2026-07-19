@@ -21,7 +21,7 @@ HEADERS = {
 }
 BASE_URL = f"https://api.github.com/repos/{REPO}"
 
-SCORE_MIN = 16  # Doit correspondre au seuil dans bodacc.py
+SCORE_MIN = 12  # Doit correspondre au seuil dans bodacc.py
 MARQUEUR_AUTO = "Généré automatiquement par MASARE-Veille"
 
 
