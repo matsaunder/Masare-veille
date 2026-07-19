@@ -64,16 +64,22 @@ JOURS_RECUL      = int(os.environ.get("JOURS_RECUL", "2"))
 
 SECTEURS = {
     "Défense & Aéronautique (BITD)": {
-        "mots_cles": ["aéronaut", "défense", "armement", "naval", "spatia", "bitd",
-                      "missi", "munition", "drone", "radar"],
+        # "défense" retiré : trop générique en français ("défense des intérêts",
+        # "sans défense", etc.) → faux positifs fréquents sur négoce généraliste.
+        # La détection BITD s'appuie sur les NAF spécifiques (25.40Z, 30.30Z, 30.11Z)
+        # ou des termes non ambigus.
+        "mots_cles": ["aéronaut", "armement", "naval", "spatia", "bitd",
+                      "munition", "drone de combat", "radar militaire", "dga ",
+                      "direction générale de l'armement", "système d'arme",
+                      "équipement militaire", "défense nationale"],
         "priorite": 1,
         "actifs_physiques": True,
         "souverainete": True,
     },
     "Tech / SaaS B2B Vertical": {
         "mots_cles": ["saas", "logiciel métier", "erp", "éditeur de logiciel", "software",
-                      "logiciel", "informatique", "cybersécur", "cloud",
-                      "intelligence artificielle", "ia ", "progiciel"],
+                      "logiciel", "cybersécur", "cloud computing",
+                      "intelligence artificielle", "progiciel", "éditeur logiciel"],
         "priorite": 1,
         "actifs_physiques": False,
         "souverainete": False,
@@ -186,20 +192,41 @@ SECTEURS = {
 # ---------------------------------------------------------------------------
 
 NAF_EXCLUS_PREFIXES = [
-    "49.3",   # Transport de voyageurs : taxis (49.32Z), autocars (49.39)
-    "56.",    # Restauration : restaurants, traiteurs, cafés
+    # Transport de personnes
+    "49.3",   # Taxis (49.32Z), autocars, transport scolaire
+    # Restauration
+    "56.",    # Restaurants, traiteurs, cafés, cantines
+    # Santé & médico-social
     "86.1",   # Hôpitaux et cliniques
     "86.2",   # Pratique médicale et dentaire
     "86.9",   # Autres activités pour la santé humaine
-    "87.",    # Hébergement médico-social et social (EHPAD, maisons de retraite)
+    "87.",    # EHPAD, maisons de retraite, hébergement médico-social
     "88.",    # Action sociale sans hébergement
-    "96.",    # Autres services personnels (coiffure, pressing, pompes funèbres)
-    "47.1",   # Commerce de détail en magasin non spécialisé (supermarchés)
-    "47.2",   # Commerce de détail alimentaire en magasin spécialisé
-    "47.6",   # Commerce de détail biens culturels et de loisir
-    "47.7",   # Commerce de détail autres articles en magasin spécialisé
-    "47.8",   # Commerce de détail sur éventaires et marchés
-    "47.9",   # Commerce de détail hors magasin (sauf 47.91 = e-commerce, conservé)
+    # Services personnels
+    "96.",    # Coiffure, pressing, pompes funèbres, services personnels
+    # Commerce de détail standard
+    "47.1",   # Supermarchés, grandes surfaces non spécialisées
+    "47.2",   # Alimentation spécialisée (boulangeries, boucheries...)
+    "47.6",   # Biens culturels et loisir (librairies, sport...)
+    "47.7",   # Autres détail spécialisé (vêtements, chaussures...)
+    "47.8",   # Marchés et éventaires
+    "47.9",   # Vente hors magasin (sauf 47.91 e-commerce, préservé)
+    # Commerce de gros généraliste / non stratégique
+    "46.1",   # Intermédiaires du commerce (agents à la commission, pas d'actifs)
+    "46.2",   # Produits agricoles bruts
+    "46.3",   # Produits alimentaires, boissons, tabac
+    "46.4",   # Biens de consommation courante (textile, électroménager grand public)
+    "46.9",   # Commerce de gros NON SPÉCIALISÉ (négoce généraliste — ex: COLLECTORA 46.90Z)
+    # Immobilier résidentiel pur (hors hôtellerie/tertiaire ciblé)
+    "68.3",   # Agents immobiliers (intermédiaires sans actifs propres)
+    # Services administratifs sans valeur stratégique
+    "81.",    # Services aux bâtiments (nettoyage, jardinage, sécurité gardiennage)
+    "82.",    # Activités de bureau et soutien administratif (secrétariat, call centers)
+    # Enseignement standard
+    "85.1",   # Enseignement primaire
+    "85.2",   # Enseignement secondaire
+    "85.3",   # Enseignement supérieur standard (hors grandes écoles spécialisées)
+    "85.5",   # Autres enseignements (auto-écoles, cours de langues, sport)
 ]
 
 # NAF spécifiquement préservés même s'ils commencent par un préfixe exclu
@@ -314,6 +341,23 @@ PROCEDURES = {
     "liquidation judiciaire":  1,  # Actifs liquidés — possible mais plus dur
     "sauvegarde":              0,  # Surveillance long terme seulement
 }
+
+# Procédures administratives internes exclues : ce sont des étapes dans une
+# procédure existante, pas des points d'entrée MASARE. Les filtrer évite les
+# faux positifs (ex: COLLECTORA "Dépôt de l'état des créances" = étape LJ/RJ
+# sans valeur propre pour le scoring).
+PROCEDURES_EXCLUES = [
+    "dépôt de l'état des créances",
+    "état des créances",
+    "vérification des créances",
+    "admission des créances",
+    "relevé de forclusion",
+    "répartition",
+    "clôture pour insuffisance d'actif",   # LJ terminée, plus rien à faire
+    "clôture de la liquidation",
+    "fin de mission",
+    "jugement de clôture",
+]
 
 TRANCHE_EFFECTIF = {
     "NN": "Non employeuse", "00": "0 salarié", "01": "1–2 sal.", "02": "3–5 sal.",
@@ -592,16 +636,30 @@ def enrichir_depuis_pappers(siren: str) -> dict:
             })
 
         dernier = exercices[0] if exercices else {}
+        site_internet = data.get("site_internet", "") or ""
         return {
             "ca_dernier":       dernier.get("ca"),
             "resultat_dernier": dernier.get("resultat"),
             "ebitda_dernier":   dernier.get("ebitda"),
             "annee_dernier":    dernier.get("annee"),
             "exercices":        exercices,
+            "site_internet":    site_internet,
         }
     except Exception as ex:
         print(f"  [Pappers] Exception pour SIREN {siren} : {ex}")
         return {}
+
+
+def construire_lien_pappers(denomination: str, siren: str) -> str:
+    """Construit le lien direct vers la fiche Pappers de la société."""
+    import unicodedata
+    slug = denomination.lower().strip()
+    # Convertir accents en ASCII (é→e, ç→c, etc.)
+    slug = unicodedata.normalize("NFD", slug)
+    slug = "".join(c for c in slug if unicodedata.category(c) != "Mn")
+    slug = re.sub(r'[^a-z0-9]+', '-', slug)
+    slug = slug.strip('-')
+    return f"https://www.pappers.fr/entreprise/{slug}-{siren}"
 
 
 def calculer_bonus_pappers(pappers: dict) -> int:
@@ -796,6 +854,11 @@ def scorer_dossier(record: dict) -> tuple:
     adresse       = extraire_adresse(record)
     procedure_raw = extraire_procedure(record)
     tribunal      = extraire_tribunal(record)
+
+    # Filtrer les procédures administratives internes (pas des points d'entrée MASARE)
+    proc_lower = normalise(procedure_raw)
+    if any(p in proc_lower for p in PROCEDURES_EXCLUES):
+        return 0, None, procedure_raw, "Basse", False
 
     texte_complet = f"{denomination} {activite} {procedure_raw} {tribunal}"
     secteur_detecte, priorite = detecter_secteur(texte_complet)
@@ -1088,7 +1151,15 @@ def construire_corps_issue(
         else "_Aucun contact extrait du BODACC_"
     )
 
+    # Liens rapides
+    lien_pappers = construire_lien_pappers(dossier['denomination'], dossier['siren'])
+    site_web = pappers.get("site_internet", "") if pappers else ""
+    lien_site = f" · [🌐 Site web]({site_web})" if site_web else ""
+    bloc_liens = f"🔗 [Fiche Pappers]({lien_pappers}){lien_site}\n"
+
     return f"""## {dossier['denomination']}{geo_tag}
+
+{bloc_liens}
 {taille_warning}
 | Champ | Valeur |
 |-------|--------|
