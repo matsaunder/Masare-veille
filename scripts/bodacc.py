@@ -58,6 +58,14 @@ SCORE_MIN        = 12   # Seuil de publication des issues GitHub
 PRE_AI_THRESHOLD = 10   # Seuil minimum pour appeler l'IA (D7 bonus marque/leader)
 JOURS_RECUL      = int(os.environ.get("JOURS_RECUL", "2"))
 
+# Seuil CA minimum pour MASARE (ticket ≥ 10M€ → CA cible ≥ 5M€)
+# En dessous : la société est trop petite pour être un dossier MASARE
+CA_MIN_MASARE = 5_000_000  # €5M
+
+# Tranches d'effectif INSEE trop petites pour les secteurs industriels/tech
+# (immobilier et marques peuvent avoir 0 salarié et rester pertinents)
+EFFECTIF_TROP_PETIT = {"NN", "00", "01", "02"}  # Non employeuse à 5 sal.
+
 # ---------------------------------------------------------------------------
 # SECTEURS CIBLES
 # ---------------------------------------------------------------------------
@@ -662,6 +670,155 @@ def construire_lien_pappers(denomination: str, siren: str) -> str:
     return f"https://www.pappers.fr/entreprise/{slug}-{siren}"
 
 
+def _parse_montant_pappers(valeur_str: str) -> float | None:
+    """Convertit une valeur Pappers en float (gère K, M, espaces, virgules)."""
+    if not valeur_str:
+        return None
+    s = str(valeur_str).strip().replace(" ", "").replace("\xa0", "").replace(" ", "")
+    # Suffixe K ou M (Pappers affiche parfois 669K ou 1,06M)
+    multiplieur = 1
+    if s.upper().endswith("K"):
+        multiplieur = 1_000
+        s = s[:-1]
+    elif s.upper().endswith("M"):
+        multiplieur = 1_000_000
+        s = s[:-1]
+    s = s.replace(",", ".").replace("€", "").strip()
+    try:
+        return float(s) * multiplieur
+    except (ValueError, TypeError):
+        return None
+
+
+def scraper_finances_pappers_public(denomination: str, siren: str) -> dict:
+    """
+    Récupère les données financières depuis la page publique Pappers (GRATUIT, sans API).
+    Parse le JSON embarqué dans __NEXT_DATA__ (Next.js) ou le HTML rendu.
+
+    Retourne un dict avec les clés disponibles parmi :
+      ca, resultat_net, ebitda, tresorerie, dettes_financieres, fonds_propres,
+      marge_brute_pct, marge_ebitda_pct, autonomie_financiere_pct,
+      annee, exercices (liste des exercices disponibles)
+
+    Retourne {} si la page est inaccessible ou sans données.
+    """
+    try:
+        url = construire_lien_pappers(denomination, siren)
+        resp = requests.get(
+            url,
+            timeout=15,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+                "Accept-Language": "fr-FR,fr;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,*/*",
+                "Referer": "https://www.pappers.fr/",
+            },
+            allow_redirects=True,
+        )
+        if not resp.ok:
+            print(f"  [Pappers public] HTTP {resp.status_code} pour {denomination}")
+            return {}
+
+        html = resp.text
+
+        # ── Tentative 1 : JSON __NEXT_DATA__ (source de vérité) ─────────────
+        nd_match = re.search(
+            r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
+            html, re.DOTALL
+        )
+        if nd_match:
+            try:
+                nd = json.loads(nd_match.group(1))
+                # Naviguer dans la structure Next.js → props.pageProps.*
+                pp = nd.get("props", {}).get("pageProps", {})
+                # Chercher une liste "finances" ou "exercices" récursivement (max 4 niveaux)
+                def find_key(obj, key, depth=0):
+                    if depth > 5 or not isinstance(obj, (dict, list)):
+                        return None
+                    if isinstance(obj, dict):
+                        if key in obj:
+                            return obj[key]
+                        for v in obj.values():
+                            r = find_key(v, key, depth+1)
+                            if r is not None:
+                                return r
+                    elif isinstance(obj, list):
+                        for item in obj:
+                            r = find_key(item, key, depth+1)
+                            if r is not None:
+                                return r
+                    return None
+
+                finances = find_key(pp, "finances") or find_key(nd, "finances")
+                if finances and isinstance(finances, list) and len(finances) > 0:
+                    # Trier par année décroissante, prendre le plus récent non vide
+                    def annee_sort(f):
+                        try: return int(f.get("annee", 0))
+                        except: return 0
+                    finances_sorted = sorted(finances, key=annee_sort, reverse=True)
+                    # Trouver le premier exercice avec un CA
+                    dernier = next(
+                        (f for f in finances_sorted if f.get("chiffre_affaires")),
+                        finances_sorted[0] if finances_sorted else {}
+                    )
+
+                    def _get(d, *keys):
+                        for k in keys:
+                            v = d.get(k)
+                            if v is not None:
+                                return _parse_montant_pappers(str(v))
+                        return None
+
+                    result = {
+                        "annee":                   str(dernier.get("annee", "")),
+                        "ca":                      _get(dernier, "chiffre_affaires", "ca", "turnover"),
+                        "resultat_net":            _get(dernier, "resultat_net", "resultat", "net_income"),
+                        "ebitda":                  _get(dernier, "excedent_brut_exploitation", "ebitda", "ebe"),
+                        "tresorerie":              _get(dernier, "tresorerie", "cash"),
+                        "dettes_financieres":      _get(dernier, "dettes_financieres", "financial_debt"),
+                        "fonds_propres":           _get(dernier, "fonds_propres", "capitaux_propres", "equity"),
+                        "marge_brute_pct":         _get(dernier, "taux_marge_brute", "gross_margin_rate"),
+                        "marge_ebitda_pct":        _get(dernier, "taux_marge_ebitda", "taux_marge_ebe"),
+                        "autonomie_financiere_pct":_get(dernier, "autonomie_financiere", "financial_autonomy"),
+                        "exercices":               [str(f.get("annee","")) for f in finances_sorted if f.get("annee")],
+                        "source":                  "pappers_public",
+                    }
+                    # Nettoyer les None
+                    result = {k: v for k, v in result.items() if v is not None and v != ""}
+                    if result.get("ca"):
+                        print(f"  [Pappers public] CA={result['ca']/1e6:.2f}M€ ({result.get('annee','?')}) — {denomination}")
+                        return result
+            except Exception as ex:
+                print(f"  [Pappers public] Parsing __NEXT_DATA__ échoué : {ex}")
+
+        # ── Tentative 2 : regex HTML ─────────────────────────────────────────
+        # Pappers affiche les chiffres avec séparateurs d'espaces insécables
+        # On cherche le CA dans un contexte proche de "Chiffre d'affaires"
+        ca_patterns = [
+            r"[Cc]hiffre\s+d.affaires\s*\(.\)\s*[|,;\s]*([0-9][0-9 \s]*(?:,[0-9]+)?)\s*(?:€|K|M)?",
+            r"\"chiffre_affaires\"\s*:\s*([0-9]+(?:\.[0-9]+)?)",
+            r"chiffreAffaires[\"']?\s*:\s*([0-9]+(?:\.[0-9]+)?)",
+        ]
+        for pat in ca_patterns:
+            hit = re.search(pat, html, re.IGNORECASE)
+            if hit:
+                ca = _parse_montant_pappers(hit.group(1))
+                if ca and ca > 0:
+                    print(f"  [Pappers public] CA≈{ca/1e6:.2f}M€ (HTML regex) — {denomination}")
+                    return {"ca": ca, "source": "pappers_public_regex"}
+
+        print(f"  [Pappers public] Aucune donnée financière trouvée — {denomination}")
+        return {}
+
+    except Exception as ex:
+        print(f"  [Pappers public] Exception pour {denomination} ({siren}) : {ex}")
+        return {}
+
+
 def calculer_bonus_pappers(pappers: dict) -> int:
     """
     D2 — Rentabilité historique (bonus, source Pappers).
@@ -1082,46 +1239,79 @@ def construire_corps_issue(
     else:
         bloc_dirigeants = ""
 
-    # Données financières Pappers
+    # Données financières : API Pappers (token) ou scraping public
+    finances_pub = dossier.get("finances_publiques", {})
+
     if pappers:
+        # ── Source : API Pappers (token actif) ──
         annee_fin = pappers.get("annee_dernier", "")
         ca_str    = format_montant(pappers.get("ca_dernier"))
         res_str   = format_montant(pappers.get("resultat_dernier"))
         ebi_str   = format_montant(pappers.get("ebitda_dernier"))
-
         lignes_fin = [
             "",
-            f"### 📊 Données financières (source Pappers — exercice {annee_fin})",
+            f"### 📊 Données financières (Pappers API — exercice {annee_fin})",
             "",
             "| Indicateur | Valeur |",
             "|------------|--------|",
             f"| Chiffre d'affaires | {ca_str} |",
-            f"| EBITDA | {ebi_str} |",
+            f"| EBITDA / EBE | {ebi_str} |",
             f"| Résultat net | {res_str} |",
         ]
-
         exercices = pappers.get("exercices", [])
         if len(exercices) > 1:
-            lignes_fin += [
-                "",
-                "**Évolution CA sur 3 ans :**",
-                "",
-                "| Exercice | CA | Résultat net |",
-                "|----------|-----|--------------|",
-            ]
+            lignes_fin += ["", "**Évolution sur 3 ans :**", "",
+                           "| Exercice | CA | Résultat net |", "|----------|-----|--------------|"]
             for ex in exercices:
                 lignes_fin.append(
                     f"| {ex['annee']} | {format_montant(ex['ca'])} | {format_montant(ex['resultat'])} |"
                 )
-
         bloc_financier = "\n".join(lignes_fin)
+
+    elif finances_pub:
+        # ── Source : page publique Pappers (gratuit) ──
+        annee_fin = finances_pub.get("annee", "N/D")
+        def fm(v): return format_montant(v) if v is not None else "N/D"
+        def fp(v): return f"{v:.1f}%" if v is not None else "N/D"
+
+        lignes_fin = [
+            "",
+            f"### 📊 Données financières (Pappers public — exercice {annee_fin})",
+            "",
+            "| Indicateur | Valeur |",
+            "|------------|--------|",
+            f"| **Chiffre d'affaires** | **{fm(finances_pub.get('ca'))}** |",
+            f"| EBITDA / EBE | {fm(finances_pub.get('ebitda'))} |",
+            f"| Résultat net | {fm(finances_pub.get('resultat_net'))} |",
+        ]
+        if finances_pub.get("fonds_propres") is not None:
+            lignes_fin.append(f"| Fonds propres | {fm(finances_pub.get('fonds_propres'))} |")
+        if finances_pub.get("tresorerie") is not None:
+            lignes_fin.append(f"| Trésorerie | {fm(finances_pub.get('tresorerie'))} |")
+        if finances_pub.get("dettes_financieres") is not None:
+            lignes_fin.append(f"| Dettes financières | {fm(finances_pub.get('dettes_financieres'))} |")
+        if finances_pub.get("marge_brute_pct") is not None:
+            lignes_fin.append(f"| Marge brute | {fp(finances_pub.get('marge_brute_pct'))} |")
+        if finances_pub.get("marge_ebitda_pct") is not None:
+            lignes_fin.append(f"| Marge EBITDA | {fp(finances_pub.get('marge_ebitda_pct'))} |")
+        if finances_pub.get("autonomie_financiere_pct") is not None:
+            lignes_fin.append(f"| Autonomie financière | {fp(finances_pub.get('autonomie_financiere_pct'))} |")
+
+        exercices_disponibles = finances_pub.get("exercices", [])
+        if exercices_disponibles:
+            lignes_fin.append(f"\n_Exercices disponibles sur Pappers : {', '.join(exercices_disponibles)}_")
+
+        lien_fin = construire_lien_pappers(dossier['denomination'], dossier['siren'])
+        lignes_fin.append(f"\n🔗 [Voir fiche Pappers complète]({lien_fin})")
+        bloc_financier = "\n".join(lignes_fin)
+
     else:
-        statut_pappers = (
-            "_Données financières non disponibles — activer PAPPERS_TOKEN pour CA/EBITDA/résultat_"
-            if not PAPPERS_TOKEN
-            else "_Données financières non retournées par Pappers pour ce SIREN_"
+        lien_pappers_fin = construire_lien_pappers(dossier['denomination'], dossier['siren'])
+        bloc_financier = (
+            f"\n### 📊 Données financières\n\n"
+            f"_Non disponibles pour ce SIREN._  \n"
+            f"🔗 [Vérifier sur Pappers]({lien_pappers_fin})\n"
         )
-        bloc_financier = f"\n### 📊 Données financières\n\n{statut_pappers}\n"
 
     # Historique BODACC
     if historique:
@@ -1331,7 +1521,6 @@ def main():
         secteur_naf, priorite_naf = naf_vers_secteur_masare(naf_code)
         if secteur_naf and secteur_naf != secteur:
             print(f"  ↺ Reclassification NAF {naf_code} : {secteur} → {secteur_naf}")
-            # Recalculer D1 si la priorité change
             ancienne_priorite = SECTEURS.get(secteur, {}).get("priorite", 0) if secteur else 0
             if priorite_naf != ancienne_priorite:
                 diff_d1 = (6 if priorite_naf == 1 else 4 if priorite_naf == 2 else 0) \
@@ -1339,6 +1528,42 @@ def main():
                 score_base  += diff_d1
                 score_taille = score_base + taille_score
             secteur = secteur_naf
+
+        # ── Filtre taille : effectif (toujours disponible, gratuit) ─────────
+        # Les secteurs immobilier et marques peuvent avoir 0 salarié et rester valides
+        secteur_accepte_petite_taille = secteur and any(
+            s in secteur for s in ["Immobilier", "Marques", "Hôtellerie", "Logistique"]
+        )
+        tranche_code = api_gouv.get("tranche_effectif_salarie_raw", "") or ""
+        # Récupérer le code brut de tranche depuis data.gouv directement
+        if not tranche_code:
+            # Inférer depuis le label si besoin
+            effectif_label = api_gouv.get("effectif_officiel", "")
+            if "Non employeuse" in effectif_label:
+                tranche_code = "NN"
+            elif "0 salarié" in effectif_label:
+                tranche_code = "00"
+            elif "1–2" in effectif_label:
+                tranche_code = "01"
+            elif "3–5" in effectif_label:
+                tranche_code = "02"
+
+        if tranche_code in EFFECTIF_TROP_PETIT and not secteur_accepte_petite_taille:
+            print(f"  ✗ Trop petit (effectif {api_gouv.get('effectif_officiel','?')}) — {denomination}")
+            continue
+
+        # ── Filtre CA + enrichissement financier public Pappers ─────────────
+        # Scraping page publique Pappers (gratuit) : pour filtrer ET enrichir l'issue
+        # Pas appliqué à l'immobilier (SCI/foncières sans CA mais avec actifs)
+        finances_publiques = {}
+        if not secteur_accepte_petite_taille:
+            finances_publiques = scraper_finances_pappers_public(denomination, siren)
+            ca_public = finances_publiques.get("ca", 0)
+            if ca_public and ca_public < CA_MIN_MASARE:
+                print(f"  ✗ CA trop faible ({ca_public/1e6:.2f}M€ < {CA_MIN_MASARE/1e6:.0f}M€) — {denomination}")
+                continue
+            # Si Pappers API est aussi actif, les données API priment pour le scoring
+            # mais les données publiques restent disponibles pour l'affichage
 
         # ── Historique & Pappers ──
         historique_rec = historique_bodacc(siren)
@@ -1372,18 +1597,19 @@ def main():
 
         # ── Dossier retenu ──
         dossier = {
-            "denomination":    denomination,
-            "siren":           siren,
-            "forme_juridique": extraire_forme_juridique(record),
-            "adresse":         extraire_adresse(record),
-            "tribunal":        extraire_tribunal(record),
-            "procedure":       procedure,
-            "secteur":         secteur,
-            "date_parution":   record.get("dateparution", "") or "N/A",
-            "contacts":        extraire_contacts(record),
-            "score":           final_score,
-            "urgence":         urgence,
-            "geo_match":       geo_match,
+            "denomination":      denomination,
+            "siren":             siren,
+            "forme_juridique":   extraire_forme_juridique(record),
+            "adresse":           extraire_adresse(record),
+            "tribunal":          extraire_tribunal(record),
+            "procedure":         procedure,
+            "secteur":           secteur,
+            "date_parution":     record.get("dateparution", "") or "N/A",
+            "contacts":          extraire_contacts(record),
+            "score":             final_score,
+            "urgence":           urgence,
+            "geo_match":         geo_match,
+            "finances_publiques": finances_publiques,  # données Pappers public
         }
 
         detail_score = (
