@@ -526,9 +526,9 @@ def enrichir_avec_ia(dossier: dict, api_gouv: dict, pappers: dict, historique: l
     if not GOOGLE_AI_KEY:
         return "", 0
     try:
-        import google.generativeai as genai
+        from google import genai
 
-        genai.configure(api_key=GOOGLE_AI_KEY)
+        client_gemini = genai.Client(api_key=GOOGLE_AI_KEY)
 
         ca_str       = format_montant(pappers.get("ca_dernier")) if pappers else "N/D"
         resultat_str = format_montant(pappers.get("resultat_dernier")) if pappers else "N/D"
@@ -587,8 +587,10 @@ INSTRUCTIONS :
 MARQUE_SCORE: X
 (X = 4 si marque iconique nationale ou internationale en difficulté — ex : Duralex, Brandt, Lafuma ; X = 2 si leader reconnu d'une niche sectorielle ; X = 0 sinon)"""
 
-        model    = genai.GenerativeModel("gemini-2.0-flash")
-        response = model.generate_content(prompt)
+        response   = client_gemini.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=prompt,
+        )
         texte_brut = response.text.strip()
 
         # Extraire MARQUE_SCORE
@@ -602,7 +604,7 @@ MARQUE_SCORE: X
         return analyse_propre, marque_score
 
     except ImportError:
-        print("  [Gemini] Package google-generativeai non installé — analyse IA ignorée")
+        print("  [Gemini] Package google-genai non installé — analyse IA ignorée")
         return "", 0
     except Exception as ex:
         print(f"  [Gemini] Exception : {ex}")
