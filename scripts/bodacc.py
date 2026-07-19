@@ -42,7 +42,7 @@ from datetime import datetime, timedelta
 GITHUB_TOKEN    = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_REPO     = os.environ.get("GITHUB_REPO", "matsaunder/Masare-veille")
 PAPPERS_TOKEN   = os.environ.get("PAPPERS_TOKEN", "")
-GOOGLE_AI_KEY   = os.environ.get("GOOGLE_AI_KEY", "")
+GROQ_API_KEY    = os.environ.get("GROQ_API_KEY", "")
 
 GITHUB_HEADERS = {
     "Authorization": f"Bearer {GITHUB_TOKEN}",
@@ -54,8 +54,8 @@ BODACC_API   = "https://bodacc-datadila.opendatasoft.com/api/explore/v2.1/catalo
 API_GOUV_URL = "https://recherche-entreprises.api.gouv.fr/search"
 PAPPERS_URL  = "https://api.pappers.fr/v2/entreprise"
 
-SCORE_MIN        = 16   # Seuil de publication des issues GitHub
-PRE_AI_THRESHOLD = 12   # Seuil minimum pour appeler Claude API (D7 bonus)
+SCORE_MIN        = 12   # Seuil de publication des issues GitHub
+PRE_AI_THRESHOLD = 10   # Seuil minimum pour appeler l'IA (D7 bonus marque/leader)
 JOURS_RECUL      = int(os.environ.get("JOURS_RECUL", "2"))
 
 # ---------------------------------------------------------------------------
@@ -519,16 +519,16 @@ def calculer_bonus_pappers(pappers: dict) -> int:
 def enrichir_avec_ia(dossier: dict, api_gouv: dict, pappers: dict, historique: list) -> tuple:
     """
     Génère une analyse investissement (situation, angle MASARE, actifs, red flags)
-    via Google Gemini Flash (tier gratuit). Retourne (analyse_str, marque_score).
+    via Groq (gratuit, 500 req/jour, llama-3.3-70b). Retourne (analyse_str, marque_score).
     marque_score : 4 si marque iconique, 2 si leader de niche, 0 sinon.
-    Désactivé silencieusement si GOOGLE_AI_KEY absent → ("", 0).
+    Désactivé silencieusement si GROQ_API_KEY absent → ("", 0).
     """
-    if not GOOGLE_AI_KEY:
+    if not GROQ_API_KEY:
         return "", 0
     try:
-        from google import genai
+        from groq import Groq
 
-        client_gemini = genai.Client(api_key=GOOGLE_AI_KEY)
+        client_groq = Groq(api_key=GROQ_API_KEY)
 
         ca_str       = format_montant(pappers.get("ca_dernier")) if pappers else "N/D"
         resultat_str = format_montant(pappers.get("resultat_dernier")) if pappers else "N/D"
@@ -587,11 +587,12 @@ INSTRUCTIONS :
 MARQUE_SCORE: X
 (X = 4 si marque iconique nationale ou internationale en difficulté — ex : Duralex, Brandt, Lafuma ; X = 2 si leader reconnu d'une niche sectorielle ; X = 0 sinon)"""
 
-        response   = client_gemini.models.generate_content(
-            model="gemini-1.5-flash",
-            contents=prompt,
+        response   = client_groq.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1000,
         )
-        texte_brut = response.text.strip()
+        texte_brut = response.choices[0].message.content.strip()
 
         # Extraire MARQUE_SCORE
         marque_score = 0
@@ -604,10 +605,10 @@ MARQUE_SCORE: X
         return analyse_propre, marque_score
 
     except ImportError:
-        print("  [Gemini] Package google-genai non installé — analyse IA ignorée")
+        print("  [Groq] Package groq non installé — analyse IA ignorée")
         return "", 0
     except Exception as ex:
-        print(f"  [Gemini] Exception : {ex}")
+        print(f"  [Groq] Exception : {ex}")
         return "", 0
 
 
@@ -1108,7 +1109,7 @@ def main():
     print(f"[MASARE-Veille] Démarrage — {date_rapport}")
     print(f"[MASARE-Veille] Seuil publication : {SCORE_MIN}/20 | Seuil IA : {PRE_AI_THRESHOLD}/20")
     print(f"[MASARE-Veille] Pappers : {'activé' if PAPPERS_TOKEN else 'désactivé (PAPPERS_TOKEN absent)'}")
-    print(f"[MASARE-Veille] Gemini IA : {'activée' if GOOGLE_AI_KEY else 'désactivée (GOOGLE_AI_KEY absent)'}")
+    print(f"[MASARE-Veille] Groq IA   : {'activée' if GROQ_API_KEY else 'désactivée (GROQ_API_KEY absent)'}")
 
     records = fetch_bodacc()
     print(f"[MASARE-Veille] {len(records)} annonce(s) BODACC récupérée(s)")
