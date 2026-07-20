@@ -47,6 +47,15 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add rapport_*.md
+          # Migration : déplacer les rapports à la racine vers rapports/YYYY/MM/
+          for f in rapport_*.md; do
+            if [ -f "$f" ]; then
+              annee="${f:8:4}"
+              mois="${f:12:2}"
+              mkdir -p "rapports/$annee/$mois"
+              git mv "$f" "rapports/$annee/$mois/$f"
+            fi
+          done
+          git add rapports/
           git diff --staged --quiet || git commit -m "Rapport veille MASARE $(date +'%Y-%m-%d')"
           git push
