@@ -66,6 +66,25 @@ CA_MIN_MASARE = 5_000_000  # €5M
 # (immobilier et marques peuvent avoir 0 salarié et rester pertinents)
 EFFECTIF_TROP_PETIT = {"NN", "00", "01", "02"}  # Non employeuse à 5 sal.
 
+# Formes juridiques unipersonnelles — exclues systématiquement.
+# Une structure à associé unique ne peut pas être une cible MASARE (ticket ≥ 10M€).
+FORMES_JURIDIQUES_EXCLUES = [
+    "unipersonnelle",          # Couvre EURL ("Entreprise unipersonnelle à responsabilité limitée")
+                               # et SASU ("Société par actions simplifiée unipersonnelle")
+    "eurl",                    # Sigle court
+    "sasu",                    # Sigle court
+    "entreprise individuelle",  # EI classique
+    "auto-entrepreneur",        # Micro-entrepreneur
+    "micro-entrepreneur",
+    "eirl",                    # Entreprise Individuelle à Responsabilité Limitée (ancien régime)
+]
+
+
+def est_forme_juridique_exclue(forme: str) -> bool:
+    """Retourne True si la forme juridique est unipersonnelle (incompatible ticket MASARE ≥ 10M€)."""
+    f = forme.lower().strip()
+    return any(exclu in f for exclu in FORMES_JURIDIQUES_EXCLUES)
+
 # ---------------------------------------------------------------------------
 # SECTEURS CIBLES
 # ---------------------------------------------------------------------------
@@ -1555,6 +1574,12 @@ def main():
 
         siren        = extraire_siren(record)
         denomination = extraire_denomination(record)
+
+        # ── Filtre forme juridique unipersonnelle (EURL, SASU, EI, auto-entrepreneur…) ──
+        forme_juridique_raw = extraire_forme_juridique(record)
+        if est_forme_juridique_exclue(forme_juridique_raw):
+            print(f"  ✗ Forme juridique unipersonnelle ({forme_juridique_raw}) — {denomination}")
+            continue
 
         # ── D5 — Taille (data.gouv.fr) ──
         api_gouv     = enrichir_depuis_api_gouv(siren)
