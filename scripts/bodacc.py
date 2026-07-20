@@ -1,7 +1,7 @@
 """
 MASARE - Veille Distressed BODACC
 Script de surveillance automatique des procédures collectives
-Critères affinés 19 juillet 2026
+Critères affinés 20 juillet 2026
 
 Sources d'enrichissement :
 1. BODACC (annonces-commerciales) — procédure du jour
@@ -26,7 +26,7 @@ Scoring /20 :
   ── BONUS (Pappers D2 toujours calculé si token ; IA D7 gated sur score_mid ≥ PRE_AI_THRESHOLD=10) ──
   D2 Rentabilité hist.: résultat net > 0 sur 2-3 ans → +4 | sur 1 an → +2 (source Pappers API)
   D7 Marque/Leader    : marque iconique → +4 | leader de niche → +2 (Groq IA)
-  Score plafonné à 20. Seuil de publication : SCORE_MIN = 12.
+  Score plafonné à 20. Seuil de publication : SCORE_MIN = 14.
 """
 
 import os
@@ -54,7 +54,7 @@ BODACC_API   = "https://bodacc-datadila.opendatasoft.com/api/explore/v2.1/catalo
 API_GOUV_URL = "https://recherche-entreprises.api.gouv.fr/search"
 PAPPERS_URL  = "https://api.pappers.fr/v2/entreprise"
 
-SCORE_MIN        = 12   # Seuil de publication des issues GitHub
+SCORE_MIN        = 14   # Seuil de publication des issues GitHub
 PRE_AI_THRESHOLD = 10   # Seuil minimum pour appeler l'IA (D7 bonus marque/leader)
 JOURS_RECUL      = int(os.environ.get("JOURS_RECUL", "2"))
 
@@ -200,46 +200,87 @@ SECTEURS = {
 # ---------------------------------------------------------------------------
 
 NAF_EXCLUS_PREFIXES = [
-    # Transport de personnes
-    "49.3",   # Taxis (49.32Z), autocars, transport scolaire
-    # Restauration
-    "56.",    # Restaurants, traiteurs, cafés, cantines
-    # Santé & médico-social
-    "86.1",   # Hôpitaux et cliniques
-    "86.2",   # Pratique médicale et dentaire
-    "86.9",   # Autres activités pour la santé humaine
-    "87.",    # EHPAD, maisons de retraite, hébergement médico-social
-    "88.",    # Action sociale sans hébergement
-    # Services personnels
-    "96.",    # Coiffure, pressing, pompes funèbres, services personnels
-    # Commerce de détail standard
-    "47.1",   # Supermarchés, grandes surfaces non spécialisées
-    "47.2",   # Alimentation spécialisée (boulangeries, boucheries...)
-    "47.6",   # Biens culturels et loisir (librairies, sport...)
-    "47.7",   # Autres détail spécialisé (vêtements, chaussures...)
-    "47.8",   # Marchés et éventaires
-    "47.9",   # Vente hors magasin (sauf 47.91 e-commerce, préservé)
-    # Commerce de gros généraliste / non stratégique
-    "46.1",   # Intermédiaires du commerce (agents à la commission, pas d'actifs)
-    "46.2",   # Produits agricoles bruts
-    "46.3",   # Produits alimentaires, boissons, tabac
-    "46.4",   # Biens de consommation courante (textile, électroménager grand public)
-    "46.9",   # Commerce de gros NON SPÉCIALISÉ (négoce généraliste — ex: COLLECTORA 46.90Z)
-    # Immobilier résidentiel pur (hors hôtellerie/tertiaire ciblé)
+    # ── BTP ──────────────────────────────────────────────────────────────────
+    "42.",    # Génie civil (routes, autoroutes, ponts, réseaux) — marges faibles, pas d'actifs propres
+    "43.",    # Travaux de construction spécialisés (électricité, plomberie, peinture bâtiment)
+    # ── Transport de personnes ────────────────────────────────────────────────
+    "49.3",   # Taxis (49.32Z), VTC, autocars, transport scolaire
+    "49.4",   # Transport routier de marchandises — camionnage, marges faibles, actifs standard
+    "53.",    # Activités de poste et de courrier (distribution, chronopost)
+    # ── Commerce ─────────────────────────────────────────────────────────────
+    "45.",    # Commerce et réparation véhicules automobiles/motos (concessionnaires)
+    "46.1",   # Intermédiaires du commerce (agents à la commission, aucun actif)
+    "46.2",   # Commerce de gros produits agricoles bruts
+    "46.3",   # Commerce de gros alimentaire (boissons, tabac)
+    "46.4",   # Commerce de gros biens conso courants (textile, électroménager grand public)
+    "46.9",   # Commerce de gros NON SPÉCIALISÉ — ex: COLLECTORA 46.90Z
+    "47.1",   # Commerce de détail non spécialisé (supermarchés, grandes surfaces)
+    "47.2",   # Commerce de détail alimentaire spécialisé (boulangeries, boucheries)
+    "47.6",   # Commerce de détail biens culturels et de loisir
+    "47.7",   # Commerce de détail autres produits (vêtements, chaussures, électronique)
+    "47.8",   # Commerce sur marchés et éventaires
+    "47.9",   # Vente hors magasin hors internet (VPC classique, colportage)
+    # ── Restauration ─────────────────────────────────────────────────────────
+    "56.",    # Restaurants, traiteurs, cafés, cantines, fast-food
+    # ── Hébergement non hôtelier ─────────────────────────────────────────────
+    # 55.1 (hôtels) GARDER — voir NAF_SECTEURS_MASARE
+    # ── Finance & assurance (réglementés ACPR/AMF, hors périmètre PE distressed) ──
+    "64.",    # Banques, crédit, financement (supervision ACPR)
+    "65.",    # Assurance et réassurance (supervision ACPR)
+    "66.",    # Auxiliaires financiers, gestion de fonds (supervision AMF)
+    # ── Immobilier résidentiel pur ────────────────────────────────────────────
     "68.3",   # Agents immobiliers (intermédiaires sans actifs propres)
-    # Services administratifs sans valeur stratégique
-    "81.",    # Services aux bâtiments (nettoyage, jardinage, sécurité gardiennage)
-    "82.",    # Activités de bureau et soutien administratif (secrétariat, call centers)
-    # Enseignement standard
+    # ── Activités spécialisées sans actifs tangibles ─────────────────────────
+    "69.",    # Juridique et comptable (avocats, experts-comptables, commissaires aux comptes)
+    # 70.1 (Holdings) GARDER — groupe en distress = cible MASARE
+    "70.2",   # Conseil de gestion d'entreprises (consulting pur, sans production)
+    "71.1",   # Architecture, ingénierie civile, bureaux d'études (sans actifs propres)
+    # 71.2 (essais et analyses techniques) GARDER — voir NAF_EXCLUS_EXCEPTIONS
+    "73.",    # Publicité, régie médias, études de marché — ex: MAKEUP BAG 73.12Z
+    "74.1",   # Activités spécialisées de design
+    "74.2",   # Activités photographiques
+    "74.3",   # Traduction et interprétation
+    "75.",    # Activités vétérinaires
+    # ── Location non industrielle ─────────────────────────────────────────────
+    "77.1",   # Location de véhicules automobiles et utilitaires
+    "77.2",   # Location de biens personnels et domestiques (skis, vélos, sono)
+    # 77.3 (location machines industrielles) GARDER — voir NAF_SECTEURS_MASARE
+    # 77.4 (location propriété intellectuelle) GARDER — licences, droits
+    # ── Services administratifs sans valeur stratégique ───────────────────────
+    "78.",    # Activités liées à l'emploi (intérim, recrutement, portage salarial)
+    "79.",    # Voyages, tour-opérateurs, guides
+    "80.",    # Enquêtes et sécurité (gardiennage, détectives privés)
+    "81.",    # Services aux bâtiments (nettoyage, jardinage, maintenance)
+    "82.",    # Activités de soutien aux entreprises (secrétariat, call centers, reprographie)
+    # ── Administration publique ───────────────────────────────────────────────
+    "84.",    # Administration publique et défense (entités publiques)
+    # ── Enseignement standard ─────────────────────────────────────────────────
     "85.1",   # Enseignement primaire
     "85.2",   # Enseignement secondaire
-    "85.3",   # Enseignement supérieur standard (hors grandes écoles spécialisées)
+    "85.3",   # Enseignement supérieur standard (hors grandes écoles privées spécialisées)
     "85.5",   # Autres enseignements (auto-écoles, cours de langues, sport)
+    # 85.4 (formation continue, grandes écoles privées) GARDER — valeur marque institution
+    # ── Santé et action sociale ───────────────────────────────────────────────
+    "86.1",   # Hôpitaux et cliniques (actifs mais réglementation spécifique)
+    "86.2",   # Pratique médicale et dentaire (cabinets)
+    "86.9",   # Autres activités pour la santé humaine
+    "87.",    # EHPAD, hébergement médico-social avec soins
+    "88.",    # Action sociale sans hébergement
+    # ── Arts, loisirs, sport ──────────────────────────────────────────────────
+    "90.",    # Arts du spectacle vivant, activités récréatives
+    "91.",    # Bibliothèques, archives, musées, patrimoine (mostly public)
+    "92.",    # Organisation de jeux de hasard et d'argent
+    "93.",    # Activités sportives, récréatives et de loisirs
+    # ── Associations et services personnels ──────────────────────────────────
+    "94.",    # Organisations associatives (syndicats, partis, clubs, cultuelles)
+    "95.",    # Réparation d'ordinateurs, articles personnels et domestiques
+    "96.",    # Coiffure, pressing, pompes funèbres, services personnels divers
 ]
 
 # NAF spécifiquement préservés même s'ils commencent par un préfixe exclu
 NAF_EXCLUS_EXCEPTIONS = [
     "47.91",  # Commerce de détail par correspondance / internet — peut être intéressant
+    "71.2",   # Essais et analyses techniques (BITD adjacent) — GARDER malgré 71.1 exclu
 ]
 
 
@@ -256,8 +297,9 @@ NAF_SECTEURS_MASARE = {
     "30.1":  ("Défense & Aéronautique (BITD)", 1),  # construction navale
     "71.2":  ("Défense & Aéronautique (BITD)", 1),  # essais et analyses techniques (BITD adjacent)
     # Tech / Cyber
-    "62.0":  ("Tech / SaaS B2B Vertical", 1),   # programmation, conseil informatique
-    "63.1":  ("Tech / SaaS B2B Vertical", 1),   # traitement données, hébergement
+    "58.2":  ("Tech / SaaS B2B Vertical", 1),   # édition de logiciels (ERP, SaaS métier, progiciels, jeux)
+    "62.0":  ("Tech / SaaS B2B Vertical", 1),   # programmation, conseil informatique, ESN
+    "63.1":  ("Tech / SaaS B2B Vertical", 1),   # traitement données, hébergement, cloud
     "61.":   ("Tech / SaaS B2B Vertical", 1),   # télécommunications
     # Industrie manufacturière
     "24.":   ("Industrie Manufacturière à Barrières Élevées", 1),   # métallurgie
@@ -276,13 +318,18 @@ NAF_SECTEURS_MASARE = {
     "55.1":  ("Immobilier & Hôtellerie", 2),     # hôtels
     "41.1":  ("Immobilier & Hôtellerie", 2),     # promotion immobilière
     "41.2":  ("Immobilier & Hôtellerie", 2),     # construction de maisons individuelles
+    # R&D scientifique (brevets, propriété intellectuelle, innovation)
+    "72.":   ("Tech / SaaS B2B Vertical", 1),    # R&D — biotech, deeptech, IP valorisable
     # Énergie & Environnement
     "35.":   ("Énergie & Environnement", 2),     # production/distribution énergie
+    "36.":   ("Énergie & Environnement", 2),     # captage, traitement, distribution d'eau
     "38.":   ("Énergie & Environnement", 2),     # collecte/traitement déchets
     "39.":   ("Énergie & Environnement", 2),     # dépollution
     # Logistique avec actifs physiques
     "52.1":  ("Logistique & Entrepôts Immobiliers", 2),  # entreposage
     "52.2":  ("Logistique & Entrepôts Immobiliers", 2),  # services auxiliaires transports
+    # Location de machines industrielles (actifs physiques lourds)
+    "77.3":  ("Industrie Manufacturière à Barrières Élevées", 1),  # location machines/équipements industriels
     # Marques & Retail Premium
     "14.":   ("Marques & Retail Premium", 2),    # habillement
     "15.":   ("Marques & Retail Premium", 2),    # cuir et chaussures
@@ -1189,7 +1236,10 @@ def charger_issues_ouvertes() -> dict:
             if "pull_request" in issue:
                 continue
             body = issue.get("body", "") or ""
-            m = re.search(r"SIREN[^\|]*\|\s*([0-9]{9})", body)
+            # Extraction SIREN — le mot "SIREN" suivi des 9 chiffres dans les 50 chars
+            # suivants. Couvre tous les formats : tableau markdown, texte libre, ancien
+            # format, etc. C'est la clé primaire de déduplication.
+            m = re.search(r'SIREN.{0,50}?([0-9]{9})', body, re.IGNORECASE | re.DOTALL)
             if m:
                 index[m.group(1).strip()] = issue
             cle_nom = normalise_nom_issue(issue["title"])
@@ -1558,7 +1608,7 @@ def main():
         # ── Pappers API (3 crédits/appel) — gate score pour éviter gaspillage ──
         # D2_MAX=+4 (rentabilité), D7_MAX=+4 (marque, gated PRE_AI=10).
         # Si score_taille < 6 : score_mid_max = 10, IA non appelée (PRE_AI=10 non atteint)
-        # → final_max = 10 < SCORE_MIN=12 → Pappers inutile, crédit économisé.
+        # → final_max = 10 < SCORE_MIN=14 → Pappers inutile, crédit économisé.
         pappers = {}
         if PAPPERS_TOKEN and score_taille >= 6:
             pappers = enrichir_depuis_pappers(siren)
@@ -1570,6 +1620,20 @@ def main():
                     continue
         elif not PAPPERS_TOKEN:
             pappers = enrichir_depuis_pappers(siren)  # retourne {} silencieusement si pas de token
+
+        # ── Filtre micro-société (CA confidentiel + effectif < 20 sal) ─────────
+        # Cas : petite société française exemptée de publication du CA (< 50 sal
+        # + CA < 8M€ + bilan < 4M€) → Pappers retourne ca_dernier=None.
+        # Si l'effectif INSEE confirme < 20 salariés ET le secteur n'a pas
+        # d'actifs physiques lourds (immobilier, industrie) → trop petit pour MASARE.
+        if pappers and not secteur_accepte_petite_taille:
+            ca_pappers_check = pappers.get("ca_dernier")
+            secteur_actifs_lourds = secteur and SECTEURS.get(secteur, {}).get("actifs_physiques", False)
+            if ca_pappers_check is None and not secteur_actifs_lourds:
+                tranche = api_gouv.get("tranche_code", "")
+                if tranche in {"NN", "00", "01", "02", "03", "11"}:  # Non employeuse → 19 sal.
+                    print(f"  ✗ Micro-société probable (CA confidentiel + {api_gouv.get('effectif', '< 20 sal')}) — {denomination}")
+                    continue
 
         # ── D2 — Rentabilité historique (bonus Pappers) ──
         bonus_pappers = calculer_bonus_pappers(pappers)
