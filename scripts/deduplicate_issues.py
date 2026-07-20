@@ -23,7 +23,7 @@ HEADERS = {
 }
 BASE_URL = f"https://api.github.com/repos/{REPO}"
 
-SCORE_MIN = 12  # Doit correspondre au seuil dans bodacc.py
+SCORE_MIN = 14  # Doit correspondre au seuil dans bodacc.py
 MARQUEUR_AUTO = "Généré automatiquement par MASARE-Veille"
 
 
@@ -37,8 +37,11 @@ def construire_lien_pappers(denomination: str, siren: str) -> str:
 
 
 def extraire_siren_depuis_body(body: str) -> str:
-    """Extrait le SIREN depuis le corps d'une issue MASARE."""
-    m = re.search(r"SIREN[^\|]*\|\s*([0-9]{9})", body)
+    """Extrait le SIREN depuis le corps d'une issue MASARE.
+    Cherche le mot SIREN puis les 9 chiffres consécutifs dans les 50 chars suivants.
+    Couvre tous les formats de body (tableau markdown, texte libre, anciens formats).
+    """
+    m = re.search(r'SIREN.{0,50}?([0-9]{9})', body, re.IGNORECASE | re.DOTALL)
     return m.group(1).strip() if m else ""
 
 
@@ -201,12 +204,12 @@ def main():
     total_fermes = 0
 
     # ── ÉTAPE 0 : Patcher le lien Pappers sur les issues existantes ─────────────
+    # Toutes les issues (auto-générées ET manuelles) reçoivent le lien si absent.
     print(f"\n── Étape 0 : Ajout lien Pappers sur issues existantes (si absent)")
     n_patched = 0
     for issue in issues:
-        if est_auto_generee(issue):
-            if patcher_lien_pappers(issue):
-                n_patched += 1
+        if patcher_lien_pappers(issue):
+            n_patched += 1
     print(f"  → {n_patched} issue(s) patchée(s) avec le lien Pappers")
 
     # ── ÉTAPE 1 : Fermer les issues auto-générées sous le seuil de score ───────
