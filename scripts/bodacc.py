@@ -1213,14 +1213,9 @@ def generer_section_ecartes(dossiers_ecartes: list) -> str:
             naf_str += f" — {secteur}"
 
         # Dirigeants
+        # Dirigeants — liste de strings déjà formatés par appel_api_gouv()
         if dirigeants:
-            dir_list = []
-            for diri in dirigeants[:3]:
-                nom = diri.get("nom", "")
-                prenom = diri.get("prenom", "")
-                qualite = diri.get("qualite", "")
-                dir_list.append(f"{prenom} {nom} ({qualite})".strip(" ()"))
-            dir_str = ", ".join(dir_list)
+            dir_str = ", ".join(str(d) for d in dirigeants[:3])
         else:
             dir_str = "N/D"
 
