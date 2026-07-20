@@ -1823,7 +1823,11 @@ def main():
     print(f"[MASARE-Veille] {len(dossiers_retenus)} dossier(s) retenu(s) — {len(dossiers_ecartes)} écarté(s) documenté(s)")
 
     rapport = generer_rapport([d for d, *_ in dossiers_retenus], dossiers_ecartes, date_rapport)
-    nom_fichier = f"rapport_{date_rapport}.md"
+    annee = date_rapport[:4]
+    mois  = date_rapport[4:6]
+    dossier_rapport = os.path.join("rapports", annee, mois)
+    os.makedirs(dossier_rapport, exist_ok=True)
+    nom_fichier = os.path.join(dossier_rapport, f"rapport_{date_rapport}.md")
     with open(nom_fichier, "w", encoding="utf-8") as f:
         f.write(rapport)
     print(f"[MASARE-Veille] Rapport généré : {nom_fichier}")
