@@ -1167,7 +1167,94 @@ def fetch_bodacc(nb_jours: int = JOURS_RECUL) -> list:
 # GÉNÉRATION RAPPORT MARKDOWN
 # ---------------------------------------------------------------------------
 
-def generer_rapport(dossiers: list, date_rapport: str) -> str:
+def generer_section_ecartes(dossiers_ecartes: list) -> str:
+    """Génère la section Markdown 'Dossiers écartés' du rapport."""
+    if not dossiers_ecartes:
+        return ""
+
+    lignes = [
+        "",
+        "---",
+        "",
+        f"## 🗂️ Dossiers écartés ({len(dossiers_ecartes)})",
+        "",
+        "> Sociétés détectées mais exclues des alertes — score insuffisant, secteur non cible, ou forme juridique incompatible.",
+        "",
+    ]
+
+    for e in dossiers_ecartes:
+        denomination = e.get("denomination", "N/D")
+        siren        = e.get("siren", "N/D")
+        score_final  = e.get("score_final")
+        score_base   = e.get("score_base", 0)
+        score_taille = e.get("score_taille", 0)
+        naf_code     = e.get("naf_code", "")
+        secteur      = e.get("secteur_detecte", "") or ""
+        lien         = e.get("lien_pappers", "")
+        activite     = (e.get("activite") or "").strip()
+        forme        = e.get("forme_juridique", "N/D")
+        effectif     = e.get("effectif", "N/D")
+        categorie    = e.get("categorie", "N/D")
+        dirigeants   = e.get("dirigeants", [])
+        procedure    = e.get("procedure", "N/D")
+        adresse      = e.get("adresse", "N/D")
+        raison       = e.get("raison", "N/D")
+        date_par     = e.get("date_parution", "N/D")
+
+        # Score display
+        if score_final is not None:
+            score_str = f"{score_final}/20 (base {score_base} + taille {score_taille})"
+        else:
+            score_str = f"base {score_base} + taille {score_taille} (écarté avant calcul final)"
+
+        # NAF + secteur
+        naf_str = naf_code
+        if secteur:
+            naf_str += f" — {secteur}"
+
+        # Dirigeants
+        if dirigeants:
+            dir_list = []
+            for diri in dirigeants[:3]:
+                nom = diri.get("nom", "")
+                prenom = diri.get("prenom", "")
+                qualite = diri.get("qualite", "")
+                dir_list.append(f"{prenom} {nom} ({qualite})".strip(" ()"))
+            dir_str = ", ".join(dir_list)
+        else:
+            dir_str = "N/D"
+
+        # Lien Pappers
+        pappers_md = f"[Fiche Pappers]({lien})" if lien else "N/D"
+
+        lignes += [
+            f"### {denomination} — {siren}",
+            "",
+            f"**Raison d'exclusion :** {raison}",
+            "",
+            "| Champ | Valeur |",
+            "|-------|--------|",
+            f"| Score | {score_str} |",
+            f"| NAF / Secteur | {naf_str or 'N/D'} |",
+            f"| Procédure | {procedure} |",
+            f"| Forme juridique | {forme} |",
+            f"| Effectif | {effectif} |",
+            f"| Catégorie | {categorie} |",
+            f"| Dirigeants | {dir_str} |",
+            f"| Adresse | {adresse} |",
+            f"| Date parution | {date_par} |",
+            f"| Pappers | {pappers_md} |",
+            "",
+        ]
+        if activite:
+            lignes += [f"**Description :** {activite}", ""]
+
+        lignes.append("")
+
+    return "\n".join(lignes)
+
+
+def generer_rapport(dossiers: list, dossiers_ecartes: list, date_rapport: str) -> str:
     lignes = [
         f"# Rapport Veille Distressed MASARE — {date_rapport}",
         "",
@@ -1178,33 +1265,37 @@ def generer_rapport(dossiers: list, date_rapport: str) -> str:
     ]
     if not dossiers:
         lignes.append("*Aucun dossier retenu aujourd'hui.*")
-        return "\n".join(lignes)
+    else:
+        groupes = {"Haute": [], "Moyenne": [], "Basse": []}
+        for d in dossiers:
+            groupes[d["urgence"]].append(d)
 
-    groupes = {"Haute": [], "Moyenne": [], "Basse": []}
-    for d in dossiers:
-        groupes[d["urgence"]].append(d)
+        emoji_map = {"Haute": "🔴", "Moyenne": "🟠", "Basse": "🟡"}
+        for niveau in ["Haute", "Moyenne", "Basse"]:
+            if not groupes[niveau]:
+                continue
+            lignes += [f"## {emoji_map[niveau]} Urgence {niveau}", ""]
+            for d in groupes[niveau]:
+                geo_tag = " 📍" if d["geo_match"] else ""
+                lignes += [
+                    f"### {d['denomination']}{geo_tag} — Score {d['score']}/20",
+                    "",
+                    "| Champ | Valeur |",
+                    "|-------|--------|",
+                    f"| SIREN | {d['siren']} |",
+                    f"| Adresse | {d['adresse']} |",
+                    f"| Procédure | {d['procedure']} |",
+                    f"| Secteur | {d['secteur'] or 'Non classifié'} |",
+                    f"| Date parution | {d['date_parution']} |",
+                    "",
+                    "---",
+                    "",
+                ]
 
-    emoji_map = {"Haute": "🔴", "Moyenne": "🟠", "Basse": "🟡"}
-    for niveau in ["Haute", "Moyenne", "Basse"]:
-        if not groupes[niveau]:
-            continue
-        lignes += [f"## {emoji_map[niveau]} Urgence {niveau}", ""]
-        for d in groupes[niveau]:
-            geo_tag = " 📍" if d["geo_match"] else ""
-            lignes += [
-                f"### {d['denomination']}{geo_tag} — Score {d['score']}/20",
-                "",
-                "| Champ | Valeur |",
-                "|-------|--------|",
-                f"| SIREN | {d['siren']} |",
-                f"| Adresse | {d['adresse']} |",
-                f"| Procédure | {d['procedure']} |",
-                f"| Secteur | {d['secteur'] or 'Non classifié'} |",
-                f"| Date parution | {d['date_parution']} |",
-                "",
-                "---",
-                "",
-            ]
+    # Section dossiers écartés
+    section_ecartes = generer_section_ecartes(dossiers_ecartes)
+    if section_ecartes:
+        lignes.append(section_ecartes)
 
     lignes.append(f"*Généré automatiquement par MASARE-Veille — {datetime.now().strftime('%d/%m/%Y %H:%M')}*")
     return "\n".join(lignes)
@@ -1562,34 +1653,61 @@ def main():
     print(f"[MASARE-Veille] {len(records)} annonce(s) BODACC récupérée(s)")
 
     dossiers_retenus = []
-    ecarts_score     = 0
+    dossiers_ecartes = []   # collecte tous les dossiers filtrés avec leur raison
 
     for record in records:
         # ── Scoring de base (D1, D3, D4, D6, Géo) — sans API externes ──
         score_base, secteur, procedure, urgence, geo_match = scorer_dossier(record)
 
         if score_base == 0:
-            # Dossier disqualifié (PP, exclu, non classifié)
+            # Dossier disqualifié (PP, secteur exclu, non classifié) — trop nombreux, pas dans écartés
             continue
 
         siren        = extraire_siren(record)
         denomination = extraire_denomination(record)
 
+        # ── D5 — Taille (data.gouv.fr) — appelé EN PREMIER, avant tout filtre ──
+        # (gratuit, nécessaire pour avoir NAF + effectif dans les dossiers écartés)
+        api_gouv     = enrichir_depuis_api_gouv(siren)
+        taille_score = api_gouv.get("taille_score", 0)
+        score_taille = score_base + taille_score
+        naf_code     = api_gouv.get("naf_code", "")
+
+        # Construit le dict de base pour les dossiers écartés (rempli une fois, réutilisé)
+        activite_bodacc = extraire_activite(record)
+        def _ecarte(raison: str, score_final: int = None) -> dict:
+            return {
+                "denomination":   denomination,
+                "siren":          siren,
+                "raison":         raison,
+                "forme_juridique": extraire_forme_juridique(record),
+                "naf_code":       naf_code,
+                "secteur_detecte": secteur,
+                "procedure":      procedure,
+                "adresse":        extraire_adresse(record),
+                "tribunal":       extraire_tribunal(record),
+                "activite":       activite_bodacc,
+                "effectif":       api_gouv.get("effectif", "N/D"),
+                "categorie":      api_gouv.get("categorie", "N/D"),
+                "dirigeants":     api_gouv.get("dirigeants_rne", []),
+                "score_base":     score_base,
+                "score_taille":   score_taille,
+                "score_final":    score_final,
+                "lien_pappers":   construire_lien_pappers(denomination, siren),
+                "date_parution":  record.get("dateparution", "") or "N/A",
+            }
+
         # ── Filtre forme juridique unipersonnelle (EURL, SASU, EI, auto-entrepreneur…) ──
         forme_juridique_raw = extraire_forme_juridique(record)
         if est_forme_juridique_exclue(forme_juridique_raw):
             print(f"  ✗ Forme juridique unipersonnelle ({forme_juridique_raw}) — {denomination}")
+            dossiers_ecartes.append(_ecarte(f"Forme unipersonnelle — {forme_juridique_raw}"))
             continue
 
-        # ── D5 — Taille (data.gouv.fr) ──
-        api_gouv     = enrichir_depuis_api_gouv(siren)
-        taille_score = api_gouv.get("taille_score", 0)
-        score_taille = score_base + taille_score
-
         # ── Guard-rail NAF : exclusion et reclassification sectorielle ──
-        naf_code = api_gouv.get("naf_code", "")
         if est_naf_exclu(naf_code):
             print(f"  ✗ Exclu NAF {naf_code} — {denomination}")
+            dossiers_ecartes.append(_ecarte(f"NAF exclu — {naf_code}"))
             continue
 
         # Reclassification : si le NAF indique un secteur MASARE plus précis,
@@ -1606,7 +1724,6 @@ def main():
             secteur = secteur_naf
 
         # ── Filtre taille : effectif (toujours disponible, gratuit) ─────────
-        # Les secteurs immobilier et marques peuvent avoir 0 salarié et rester valides
         secteur_accepte_petite_taille = secteur and any(
             s in secteur for s in ["Immobilier", "Marques", "Hôtellerie", "Logistique"]
         )
@@ -1614,57 +1731,51 @@ def main():
 
         if tranche_code in EFFECTIF_TROP_PETIT and not secteur_accepte_petite_taille:
             print(f"  ✗ Trop petit (effectif {api_gouv.get('effectif_officiel','?')}) — {denomination}")
+            dossiers_ecartes.append(_ecarte(f"Effectif trop faible — {api_gouv.get('effectif','?')}"))
             continue
 
         # ── Filtre CA public (gratuit, tente scraping Pappers) ──────────────
-        # Note : retourne {} depuis GitHub Actions (403 Cloudflare) — filtre désactivé
-        # en pratique, mais enrichit l'issue quand disponible (exécution locale/VPS)
         finances_publiques = {}
         if not secteur_accepte_petite_taille:
             finances_publiques = scraper_finances_pappers_public(denomination, siren)
             ca_public = finances_publiques.get("ca", 0)
             if ca_public and ca_public < CA_MIN_MASARE:
                 print(f"  ✗ CA trop faible ({ca_public/1e6:.2f}M€ < {CA_MIN_MASARE/1e6:.0f}M€) — {denomination}")
+                dossiers_ecartes.append(_ecarte(f"CA trop faible — {ca_public/1e6:.1f}M€ (seuil {CA_MIN_MASARE/1e6:.0f}M€)"))
                 continue
 
         # ── Historique BODACC ─────────────────────────────────────────────
         historique_rec = historique_bodacc(siren)
 
         # ── Pappers API (3 crédits/appel) — gate score pour éviter gaspillage ──
-        # D2_MAX=+4 (rentabilité), D7_MAX=+4 (marque, gated PRE_AI=10).
-        # Si score_taille < 6 : score_mid_max = 10, IA non appelée (PRE_AI=10 non atteint)
-        # → final_max = 10 < SCORE_MIN=14 → Pappers inutile, crédit économisé.
         pappers = {}
         if PAPPERS_TOKEN and score_taille >= 6:
             pappers = enrichir_depuis_pappers(siren)
-            # Filtre CA Pappers API (filet de sécurité si scraping public a 403'd)
             if pappers and not secteur_accepte_petite_taille:
                 ca_pappers = pappers.get("ca_dernier")
                 if ca_pappers is not None and ca_pappers < CA_MIN_MASARE:
-                    print(f"  ✗ CA Pappers trop faible ({ca_pappers/1e6:.2f}M€ < {CA_MIN_MASARE/1e6:.0f}M€) — {denomination}")
+                    print(f"  ✗ CA Pappers trop faible ({ca_pappers/1e6:.2f}M€) — {denomination}")
+                    dossiers_ecartes.append(_ecarte(f"CA Pappers trop faible — {ca_pappers/1e6:.1f}M€ (seuil {CA_MIN_MASARE/1e6:.0f}M€)"))
                     continue
         elif not PAPPERS_TOKEN:
-            pappers = enrichir_depuis_pappers(siren)  # retourne {} silencieusement si pas de token
+            pappers = enrichir_depuis_pappers(siren)
 
         # ── Filtre micro-société (CA confidentiel + effectif < 20 sal) ─────────
-        # Cas : petite société française exemptée de publication du CA (< 50 sal
-        # + CA < 8M€ + bilan < 4M€) → Pappers retourne ca_dernier=None.
-        # Si l'effectif INSEE confirme < 20 salariés ET le secteur n'a pas
-        # d'actifs physiques lourds (immobilier, industrie) → trop petit pour MASARE.
         if pappers and not secteur_accepte_petite_taille:
             ca_pappers_check = pappers.get("ca_dernier")
             secteur_actifs_lourds = secteur and SECTEURS.get(secteur, {}).get("actifs_physiques", False)
             if ca_pappers_check is None and not secteur_actifs_lourds:
                 tranche = api_gouv.get("tranche_code", "")
-                if tranche in {"NN", "00", "01", "02", "03", "11"}:  # Non employeuse → 19 sal.
+                if tranche in {"NN", "00", "01", "02", "03", "11"}:
                     print(f"  ✗ Micro-société probable (CA confidentiel + {api_gouv.get('effectif', '< 20 sal')}) — {denomination}")
+                    dossiers_ecartes.append(_ecarte(f"Micro-société — CA confidentiel + {api_gouv.get('effectif','< 20 sal')}"))
                     continue
 
         # ── D2 — Rentabilité historique (bonus Pappers) ──
         bonus_pappers = calculer_bonus_pappers(pappers)
         score_mid     = score_taille + bonus_pappers
 
-        # ── D7 — Marque/Leader (bonus Claude IA) — seulement si score_mid >= PRE_AI_THRESHOLD ──
+        # ── D7 — Marque/Leader (bonus Groq IA) — seulement si score_mid >= PRE_AI_THRESHOLD ──
         if score_mid >= PRE_AI_THRESHOLD:
             analyse_ia, marque_score = enrichir_avec_ia(dossier_temp := {
                 "denomination":    denomination,
@@ -1683,7 +1794,11 @@ def main():
         final_score = min(score_mid + marque_score, 20)
 
         if final_score < SCORE_MIN:
-            ecarts_score += 1
+            print(f"  ✗ Score insuffisant ({final_score}/20 < {SCORE_MIN}) — {denomination}")
+            dossiers_ecartes.append(_ecarte(
+                f"Score insuffisant — {final_score}/20 (seuil {SCORE_MIN})",
+                score_final=final_score,
+            ))
             continue
 
         # ── Dossier retenu ──
@@ -1700,24 +1815,19 @@ def main():
             "score":             final_score,
             "urgence":           urgence,
             "geo_match":         geo_match,
-            "finances_publiques": finances_publiques,  # données Pappers public
+            "finances_publiques": finances_publiques,
         }
 
-        detail_score = (
-            f"D1={score_base - (score_base - (6 if secteur and SECTEURS.get(secteur, {}).get('priorite') == 1 else 4 if secteur else 0))} "
-            f"taille=+{taille_score} pappers=+{bonus_pappers} IA=+{marque_score}"
-        )
         print(f"  → Retenu : {denomination} (SIREN {siren}) — Score {final_score}/20")
-
         if api_gouv.get("categorie") == "PME":
             print(f"    ⚠️ PME — taille à vérifier")
 
         dossiers_retenus.append((dossier, api_gouv, historique_rec, pappers, analyse_ia))
 
     dossiers_retenus.sort(key=lambda x: x[0]["score"], reverse=True)
-    print(f"[MASARE-Veille] {len(dossiers_retenus)} dossier(s) retenu(s) — {ecarts_score} écarté(s) score")
+    print(f"[MASARE-Veille] {len(dossiers_retenus)} dossier(s) retenu(s) — {len(dossiers_ecartes)} écarté(s) documenté(s)")
 
-    rapport = generer_rapport([d for d, *_ in dossiers_retenus], date_rapport)
+    rapport = generer_rapport([d for d, *_ in dossiers_retenus], dossiers_ecartes, date_rapport)
     nom_fichier = f"rapport_{date_rapport}.md"
     with open(nom_fichier, "w", encoding="utf-8") as f:
         f.write(rapport)
