@@ -1212,7 +1212,6 @@ def generer_section_ecartes(dossiers_ecartes: list) -> str:
         if secteur:
             naf_str += f" — {secteur}"
 
-        # Dirigeants
         # Dirigeants — liste de strings déjà formatés par appel_api_gouv()
         if dirigeants:
             dir_str = ", ".join(str(d) for d in dirigeants[:3])
@@ -1647,6 +1646,12 @@ def main():
     records = fetch_bodacc()
     print(f"[MASARE-Veille] {len(records)} annonce(s) BODACC récupérée(s)")
 
+    # ── Charger les issues ouvertes UNE SEULE FOIS — avant toute boucle ──
+    # On extrait les SIRENs connus pour déduplication AVANT tout appel API externe.
+    issues_existantes = charger_issues_ouvertes()
+    sirens_connus = {k for k in issues_existantes if k.isdigit() and len(k) == 9}
+    print(f"[MASARE-Veille] {len(sirens_connus)} SIREN(s) déjà en issue ouverte — dédupliqués automatiquement")
+
     dossiers_retenus = []
     dossiers_ecartes = []   # collecte tous les dossiers filtrés avec leur raison
 
@@ -1660,6 +1665,14 @@ def main():
 
         siren        = extraire_siren(record)
         denomination = extraire_denomination(record)
+
+        # ── GARDE-FOU DÉDUP — AVANT tout appel API externe ──────────────────
+        # Si le SIREN est déjà présent dans une issue ouverte, on ne retraite
+        # pas la société : pas d'appel Pappers, pas d'IA, pas de nouvelle issue.
+        # L'issue existante est déjà dans le pipeline MASARE.
+        if siren != "N/A" and siren in sirens_connus:
+            print(f"  ⏭ Déjà en pipeline (Issue #{issues_existantes[siren]['number']}) — skip — {denomination}")
+            continue
 
         # ── D5 — Taille (data.gouv.fr) — appelé EN PREMIER, avant tout filtre ──
         # (gratuit, nécessaire pour avoir NAF + effectif dans les dossiers écartés)
@@ -1742,51 +1755,14 @@ def main():
         # ── Historique BODACC ─────────────────────────────────────────────
         historique_rec = historique_bodacc(siren)
 
-        # ── Pappers API (3 crédits/appel) — gate score pour éviter gaspillage ──
+        # ── Pappers & IA désactivés en veille automatique ──────────────────────
+        # Enrichissement manuel uniquement, à la discrétion de Mat sur chaque dossier.
+        # Aucun crédit Pappers (D2) ni Groq IA (D7) consommé automatiquement.
         pappers = {}
-        if PAPPERS_TOKEN and score_taille >= 6:
-            pappers = enrichir_depuis_pappers(siren)
-            if pappers and not secteur_accepte_petite_taille:
-                ca_pappers = pappers.get("ca_dernier")
-                if ca_pappers is not None and ca_pappers < CA_MIN_MASARE:
-                    print(f"  ✗ CA Pappers trop faible ({ca_pappers/1e6:.2f}M€) — {denomination}")
-                    dossiers_ecartes.append(_ecarte(f"CA Pappers trop faible — {ca_pappers/1e6:.1f}M€ (seuil {CA_MIN_MASARE/1e6:.0f}M€)"))
-                    continue
-        elif not PAPPERS_TOKEN:
-            pappers = enrichir_depuis_pappers(siren)
+        analyse_ia, marque_score = "", 0
 
-        # ── Filtre micro-société (CA confidentiel + effectif < 20 sal) ─────────
-        if pappers and not secteur_accepte_petite_taille:
-            ca_pappers_check = pappers.get("ca_dernier")
-            secteur_actifs_lourds = secteur and SECTEURS.get(secteur, {}).get("actifs_physiques", False)
-            if ca_pappers_check is None and not secteur_actifs_lourds:
-                tranche = api_gouv.get("tranche_code", "")
-                if tranche in {"NN", "00", "01", "02", "03", "11"}:
-                    print(f"  ✗ Micro-société probable (CA confidentiel + {api_gouv.get('effectif', '< 20 sal')}) — {denomination}")
-                    dossiers_ecartes.append(_ecarte(f"Micro-société — CA confidentiel + {api_gouv.get('effectif','< 20 sal')}"))
-                    continue
-
-        # ── D2 — Rentabilité historique (bonus Pappers) ──
-        bonus_pappers = calculer_bonus_pappers(pappers)
-        score_mid     = score_taille + bonus_pappers
-
-        # ── D7 — Marque/Leader (bonus Groq IA) — seulement si score_mid >= PRE_AI_THRESHOLD ──
-        if score_mid >= PRE_AI_THRESHOLD:
-            analyse_ia, marque_score = enrichir_avec_ia(dossier_temp := {
-                "denomination":    denomination,
-                "siren":           siren,
-                "forme_juridique": extraire_forme_juridique(record),
-                "adresse":         extraire_adresse(record),
-                "tribunal":        extraire_tribunal(record),
-                "procedure":       procedure,
-                "secteur":         secteur,
-                "contacts":        [],
-            }, api_gouv, pappers, historique_rec)
-        else:
-            analyse_ia, marque_score = "", 0
-
-        # ── Score final (plafonné à 20) ──
-        final_score = min(score_mid + marque_score, 20)
+        # ── Score final = score de base uniquement (D1+D3+D4+D5+D6+Géo) ──────
+        final_score = min(score_taille, 20)
 
         if final_score < SCORE_MIN:
             print(f"  ✗ Score insuffisant ({final_score}/20 < {SCORE_MIN}) — {denomination}")
@@ -1834,7 +1810,7 @@ def main():
 
     if GITHUB_TOKEN:
         print("[MASARE-Veille] Synchronisation GitHub Issues...")
-        charger_issues_ouvertes()
+        # Le cache est déjà chargé (charger_issues_ouvertes() appelé au début de main)
         for dossier, api_gouv, historique_rec, pappers, analyse_ia in dossiers_retenus:
             upsert_issue_github(dossier, api_gouv, historique_rec, pappers, analyse_ia, date_rapport)
         print("[MASARE-Veille] Issues synchronisées")
