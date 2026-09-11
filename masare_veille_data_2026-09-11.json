@@ -1,0 +1,234 @@
+{
+  "metadata": {
+    "date_collection": "2026-09-11",
+    "date_reference": "2026-09-10",
+    "sources": [
+      "API BODACC",
+      "WebSearch BODACC/Infogreffe",
+      "Recherche complémentaire entreprises",
+      "BODACC septembre 2026"
+    ],
+    "codes_naf_filtres": {
+      "Industrie/Actifs_lourds": ["2511Z", "2512Z", "2521Z", "2550A", "2562B", "2651A", "2651B", "2811Z", "2829B", "3030Z", "3254Z", "2520Z"],
+      "Cybersecurite_Tech_Defense": ["6201Z", "6202A", "6209Z", "6311Z", "7112B", "7219Z"],
+      "Immobilier_Hotellerie": ["4110A", "4110B", "6810Z", "6820B", "6831Z", "6832B", "5510Z", "5520Z", "5590Z"],
+      "Marques_Medias_Optique": ["1812Z", "2670Z", "4741Z", "5814Z", "1820Z", "4762Z"]
+    }
+  },
+  "dossiers": [
+    {
+      "id": "ARC_FRANCE_001",
+      "nom_entreprise": "Arc France",
+      "nom_commercial": "Arc International France",
+      "siren": "504313032",
+      "secteur": {
+        "code_naf": "2670Z",
+        "libelle": "Fabrication de verre creux",
+        "categorie_masare": "Marques/Médias/Optique"
+      },
+      "type_procedure": "Redressement Judiciaire (RJ) converti en Liquidation Judiciaire (LJ)",
+      "date_ouverture_redressement": "2026-01-07",
+      "date_conversion_liquidation": "2026-03-16",
+      "tribunal": {
+        "nom": "Cour Commerciale de Lille Métropole",
+        "competence": "Tourcoing (validation reprise du 16/03/2026)"
+      },
+      "localisation": {
+        "adresse": "104 Avenue du Général de Gaulle",
+        "code_postal": "62510",
+        "ville": "Arques",
+        "region": "Hauts-de-France",
+        "departement": "Pas-de-Calais"
+      },
+      "informations_financieres": {
+        "chiffre_affaires_historique": "404.0M€",
+        "annee_ca": 2024,
+        "capital_social": "17M€"
+      },
+      "emplois": {
+        "effectif_france": 3500,
+        "effectif_monde": 5700,
+        "sites_production": ["Arques", "3 établissements"]
+      },
+      "structure_juridique": "Société par Actions Simplifiée (SAS)",
+      "statut_reprise": "Reprise validée par le tribunal le 16/03/2026 par Timothée Durand (héritier de la famille fondatrice)",
+      "activites_probables": [
+        "Fabrication de verre creux pour arts de la table",
+        "Verrerie de luxe et semi-luxe",
+        "Distribution nationale et internationale"
+      ],
+      "causes_difficulte": "Effondrement du marché de la vaisselle, dégradation continue du marché pendant 10 ans",
+      "sources": [
+        "https://www.lejournaldesentreprises.com/article/le-verrier-arc-france-demande-etre-place-en-redressement-judiciaire-2133990",
+        "https://www.franceinfo.fr/economie/emploi/plans-sociaux/la-verrerie-arc-france-demande-son-placement-en-redressement-judiciaire_7726189.html",
+        "https://www.xerfi.com/etudes-par-entreprise/ARC-FRANCE_504313032",
+        "https://annuaire-entreprises.data.gouv.fr/entreprise/arc-france-504313032"
+      ]
+    },
+    {
+      "id": "BRANDT_001",
+      "nom_entreprise": "Groupe Brandt",
+      "nom_commercial": "Brandt France - Marques Brandt, de Dietrich, Vedette, Sauter",
+      "siren": "801250531",
+      "siren_groupe": "801250531",
+      "secteur": {
+        "code_naf": "2750A",
+        "libelle": "Fabrication d'appareils électroménagers",
+        "categorie_masare": "Industrie/Actifs lourds"
+      },
+      "type_procedure": "Redressement Judiciaire (RJ) puis Liquidation Judiciaire (LJ)",
+      "date_ouverture_redressement": "2025-10-01",
+      "date_jugement_liquidation": "2025-12-11",
+      "tribunal": {
+        "nom": "Tribunal des Activités Économiques de Nanterre",
+        "ressort": "Nanterre"
+      },
+      "localisation": {
+        "adresse": "89-91 Boulevard Franklin Roosevelt",
+        "code_postal": "92500",
+        "ville": "Rueil-Malmaison",
+        "region": "Île-de-France",
+        "departement": "Hauts-de-Seine"
+      },
+      "informations_financieres": {
+        "chiffre_affaires_historique": "Estimé 800M€+",
+        "structure": "Groupe multinational algérien (Cevital 2014-2025)"
+      },
+      "emplois": {
+        "effectif_supprime": 700,
+        "sites_affectes": [
+          "Production Centre-Val de Loire",
+          "SAV Île-de-France"
+        ]
+      },
+      "marques_commerciales": [
+        "Brandt",
+        "de Dietrich",
+        "Vedette",
+        "Sauter"
+      ],
+      "structure_juridique": "Société par Actions Simplifiée (SAS) à associé unique",
+      "date_fondation_groupe": 2002,
+      "statut_reprise": "36 offres de reprise déposées en mars 2026 - Aucune retenue par le tribunal",
+      "activites_probables": [
+        "Fabrication et commercialisation d'électroménagers",
+        "Distribution marques premium (de Dietrich, Sauter)",
+        "Service après-vente"
+      ],
+      "causes_difficulte": "Crise immobilière, contraction du marché du gros électroménager, changements géopolitiques (retrait du groupe algérien Cevital)",
+      "sources": [
+        "https://www.franceinfo.fr/economie/industrie/la-justice-prononce-la-liquidation-judiciaire-du-groupe-d-electromenager-brandt-quelque-700-emplois-supprimes_7672435.html",
+        "https://www.societe.com/societe/brandt-france-801250531.html",
+        "https://www.decideurs-cf.com/restructuring/63312-liquidation-de-brandt-comprendre-la-fin-d-un-geant-francais.html"
+      ]
+    },
+    {
+      "id": "MARSEILLE_MEAT_001",
+      "nom_entreprise": "Marseille Meat Company",
+      "nom_commercial": "M.M.C. Viande à Gogo",
+      "siren": "502467871",
+      "secteur": {
+        "code_naf": "4721Z",
+        "libelle": "Boucherie-Charcuterie",
+        "categorie_masare": "Marques/Médias/Optique (4741Z - Boulangerie)"
+      },
+      "note_secteur": "Pas strictement dans les secteurs MASARE mais intéressant pour diversification",
+      "type_procedure": "Liquidation Judiciaire (LJ) - Conversion depuis plan d'apaisement accéléré",
+      "date_ouverture_redressement": "2021-12-16",
+      "date_plan_apaisement": "2023-07-04",
+      "date_liquidation": "2026-01-26",
+      "tribunal": {
+        "nom": "Cour Commerciale de Marseille",
+        "competence": "Marseille"
+      },
+      "liquidateur": {
+        "nom": "Maître Jean-Charles HIDOUX",
+        "adresse": "64 rue Montgrand, 13006 Marseille CEDEX 06"
+      },
+      "localisation": {
+        "adresse": "78 boulevard Danielle Casanova",
+        "code_postal": "13014",
+        "ville": "Marseille",
+        "region": "Provence-Alpes-Côte d'Azur",
+        "departement": "Bouches-du-Rhône"
+      },
+      "informations_financieres": {
+        "type_entreprise": "SARL"
+      },
+      "activites_principales": [
+        "Boucherie",
+        "Charcuterie",
+        "Commerce de détail",
+        "Commerce de gros et semi-gros"
+      ],
+      "historique_procedures": [
+        {
+          "date": "2021-12-16",
+          "type": "Redressement judiciaire"
+        },
+        {
+          "date": "2023-07-04",
+          "type": "Plan d'apaisement accéléré (sauvegarde)"
+        },
+        {
+          "date": "2026-01-26",
+          "type": "Liquidation judiciaire immédiate"
+        }
+      ],
+      "sources": [
+        "https://www.pappers.fr/entreprise/m-m-c-viande-a-gogo-marseille-meat-company-502467871",
+        "https://www.societe.com/societe/marseille-meat-company-502467871.html",
+        "https://bodacc.io/fr/annonces-commerciales/marseille-meat-company"
+      ]
+    }
+  ],
+  "statistiques_bodacc_septembre_2026": {
+    "date_bodacc": "2026-09-06",
+    "total_annonces": 309,
+    "procedures_collectives": {
+      "liquidation_judiciaire": 93,
+      "jugements_cloture_insuffisance_actif": 32,
+      "reablissement_personnel": 30
+    },
+    "regions_affectees": {
+      "Ile_de_France": 65,
+      "PACA": 55,
+      "Normandie": 54
+    },
+    "villes_concentrees": {
+      "Marseille": 22,
+      "Paris": 12,
+      "Evreux": 6
+    },
+    "secteurs_touches": [
+      "Construction",
+      "Restauration",
+      "Commerce de détail"
+    ]
+  },
+  "resume_colletion": {
+    "nombre_dossiers_majeurs": 3,
+    "nombre_dossiers_potentiels_non_detailles": "36+ dossiers de reprise Brandt + nombreuses procédures en septembre 2026",
+    "periode_couverte": "2025-10 à 2026-09",
+    "principaux_enjeux": [
+      "Deux géants industriels français (Arc, Brandt) en difficulté majeure",
+      "Représentation des secteurs clés MASARE (verrerie, électroménager)",
+      "Potentiel d'actifs lourds à valoriser (usines, équipements industriels)",
+      "Reprises potentielles dans l'écosystème français"
+    ]
+  },
+  "notes": {
+    "limitations": [
+      "API BODACC du 2026-09-10 n'a retourné que des dépôts de comptes, pas les procédures en cours",
+      "Données d'septembre 2026 partiellement reconstruites à partir de recherches web",
+      "Certains SIREN manquants pour les dossiers mineurs listés en septembre 2026",
+      "Codes NAF non toujours fournis par les sources"
+    ],
+    "prochaines_etapes": [
+      "Scoring des opportunités par MASARE (potentiel de valeur, effet de levier, timeline)",
+      "Recherche approfondie secteur Cybersécurité/Tech/Défense",
+      "Recherche approfondie secteur Immobilier/Hôtellerie",
+      "Extraction détaillée des 309 annonces de septembre 2026"
+    ]
+  }
+}
